@@ -23,4 +23,19 @@ public class MqttClient {
         dataEventReceiverPort.receive(eui);
     }
 
+    @Incoming("device-created")
+    public void deviceCreated(byte[] eui) {
+
+    }
+
+    @Incoming("device-removed")
+    public void deviceRemoved(byte[] eui) {
+
+    }
+
+    @Incoming("device-updated")
+    public void deviceUpdated(byte[] eui) {
+
+    }
+
 }
