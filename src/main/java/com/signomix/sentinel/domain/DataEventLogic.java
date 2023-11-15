@@ -10,8 +10,10 @@ import org.jboss.logging.Logger;
 import com.signomix.common.db.IotDatabaseException;
 import com.signomix.common.db.IotDatabaseIface;
 import com.signomix.common.db.SentinelDaoIface;
+import com.signomix.common.db.SignalDaoIface;
 import com.signomix.common.iot.sentinel.AlarmCondition;
 import com.signomix.common.iot.sentinel.SentinelConfig;
+import com.signomix.common.iot.sentinel.Signal;
 
 import io.agroal.api.AgroalDataSource;
 import io.quarkus.agroal.DataSource;
@@ -34,6 +36,7 @@ public class DataEventLogic {
 
     SentinelDaoIface sentinelDao;
     IotDatabaseIface olapDao;
+    SignalDaoIface signalDao;
 
     @Inject
     SentinelLogic sentinelLogic;
@@ -43,6 +46,8 @@ public class DataEventLogic {
         sentinelDao.setDatasource(tsDs);
         olapDao = new com.signomix.common.tsdb.IotDatabaseDao();
         olapDao.setDatasource(olapDs);
+        signalDao = new com.signomix.common.tsdb.SignalDao();
+        signalDao.setDatasource(tsDs);
     }
 
     /**
@@ -99,11 +104,26 @@ public class DataEventLogic {
                 Map<String, String> channelMap = (Map<String, String>) deviceChannelMap.get(deviceEui);
                 HashMap<String, Double> valuesMap = new HashMap<>(); // key: channel, value: value
                 // TODO: fill valuesMap
+                valuesMap
                 boolean conditionsMet = runQuery(config, valuesMap);
+
                 if (conditionsMet) {
-                    Alert alert = new Alert(null, config.alertLevel, deviceEui, config.alertMessage);
-                    //TODO: save alert
-                    logger.warn("Alert fired: " + alert.toString());
+                    Signal signal= new Signal();
+                    signal.deviceEui = deviceEui;
+                    signal.level = config.alertLevel;
+                    signal.messageEn = config.alertMessage;
+                    signal.messagePl = config.alertMessage;
+                    signal.sentinelConfigId = config.id;
+                    signal.userId = null;
+                    signal.organizationId = null;
+
+                    logger.info("Signal fired: " + signal.toString());
+                    try {
+                        signalDao.saveSignal(signal);
+                    } catch (IotDatabaseException e) {
+                        logger.error(e.getMessage());
+                        e.printStackTrace();
+                    }
                 }
             }
         } catch (IotDatabaseException e) {
