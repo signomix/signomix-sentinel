@@ -13,7 +13,9 @@ import com.signomix.common.iot.sentinel.SentinelConfig;
 
 import io.agroal.api.AgroalDataSource;
 import io.quarkus.agroal.DataSource;
+import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 
 @ApplicationScoped
@@ -34,7 +36,7 @@ public class SentinelLogic {
     IotDatabaseIface olapDao;
     IotDatabaseIface oltpDao;
 
-    public void onStartup() {
+    void onStart(@Observes StartupEvent ev) {
         sentinelDao = new com.signomix.common.tsdb.SentinelDao();
         sentinelDao.setDatasource(tsDs);
         olapDao = new com.signomix.common.tsdb.IotDatabaseDao();

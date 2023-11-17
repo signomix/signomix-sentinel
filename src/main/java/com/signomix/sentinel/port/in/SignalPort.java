@@ -6,6 +6,7 @@ import org.jboss.logging.Logger;
 
 import com.signomix.common.User;
 import com.signomix.common.iot.sentinel.Signal;
+import com.signomix.sentinel.domain.SignalLogic;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -19,11 +20,14 @@ public class SignalPort {
     @Inject
     AuthPort authPort;
 
+    @Inject
+    SignalLogic signalLogic;
+
     public List<Signal> getSignals(User user, int limit, int offset) {
-        throw new UnsupportedOperationException("Unimplemented method 'getSignals'");
+        return signalLogic.getSignals(user, limit, offset);
     }
 
     public Signal getSignal(User user, long id) {
-        throw new UnsupportedOperationException("Unimplemented method 'getSignal'");
+        return signalLogic.getSignal(user, id);
     }
 }

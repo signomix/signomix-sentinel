@@ -39,7 +39,7 @@ public class DataEventLogic {
     SignalDaoIface signalDao;
 
     @Inject
-    SentinelLogic sentinelLogic;
+    SignalLogic sentinelLogic;
 
     public void onStartup() {
         sentinelDao = new com.signomix.common.tsdb.SentinelDao();
@@ -104,7 +104,9 @@ public class DataEventLogic {
                 Map<String, String> channelMap = (Map<String, String>) deviceChannelMap.get(deviceEui);
                 HashMap<String, Double> valuesMap = new HashMap<>(); // key: channel, value: value
                 // TODO: fill valuesMap
-                valuesMap
+                channelMap.forEach((channel, column) -> {
+                    valuesMap.put(channel, (Double) deviceParamsAndValues.get(Integer.parseInt(column.substring(1))));
+                });
                 boolean conditionsMet = runQuery(config, valuesMap);
 
                 if (conditionsMet) {

@@ -13,6 +13,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.HeaderParam;
+import jakarta.ws.rs.OPTIONS;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.QueryParam;
@@ -30,6 +31,12 @@ public class SignalRestApi {
 
     @Inject
     AuthPort authPort;
+
+    @GET
+    @Path("/test")
+    public Response test() {
+        return Response.ok().entity("OK").build();
+    }
 
     @GET
     public Response getSignals(@HeaderParam("Authentication") String token, @QueryParam("limit") int limit, @QueryParam("offset") int offset) {

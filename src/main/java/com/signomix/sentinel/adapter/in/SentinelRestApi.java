@@ -7,6 +7,7 @@ import org.jboss.logging.Logger;
 import com.signomix.common.User;
 import com.signomix.common.iot.sentinel.SentinelConfig;
 import com.signomix.sentinel.port.in.AuthPort;
+import com.signomix.sentinel.port.in.SentinelPort;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -27,11 +28,17 @@ public class SentinelRestApi {
     @Inject
     AuthPort authPort;
 
+    @Inject
+    SentinelPort sentinelPort;
+
     @GET
     public Response getSentinelConfigs(@HeaderParam("Authentication") String token, @QueryParam("limit") int limit, @QueryParam("offset") int offset) {
         logger.info("getSentinelConfigs: "+limit+" "+offset);
         User user = authPort.getUser(token);
-        List<SentinelConfig> configs = sentinelDao.getConfigs(userId, limit, offset);
+        if(user==null){
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+        List<SentinelConfig> configs = sentinelPort.getConfigs(user, limit, offset);
         return Response.ok().entity(configs).build();
     }
 
@@ -40,7 +47,10 @@ public class SentinelRestApi {
     public Response getSentinelConfig(@HeaderParam("Authentication") String token, @PathParam("id") long id) {
         logger.info("getSentinelConfig: "+id);
         User user = authPort.getUser(token);
-        SentinelConfig config = sentinelDao.getConfig(id);
+        if(user==null){
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+        SentinelConfig config = sentinelPort.getConfig(user,id);
         return Response.ok().entity(config).build();
     }
     
