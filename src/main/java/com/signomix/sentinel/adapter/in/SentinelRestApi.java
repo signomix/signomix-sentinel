@@ -13,6 +13,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.HeaderParam;
+import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.QueryParam;
@@ -52,6 +53,17 @@ public class SentinelRestApi {
         }
         SentinelConfig config = sentinelPort.getConfig(user,id);
         return Response.ok().entity(config).build();
+    }
+
+    @POST
+    public Response createSentinelConfig(@HeaderParam("Authentication") String token, SentinelConfig config) {
+        logger.info("createSentinelConfig: "+config);
+        User user = authPort.getUser(token);
+        if(user==null){
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+        sentinelPort.createConfig(user,config);
+        return Response.ok().build();
     }
     
 }

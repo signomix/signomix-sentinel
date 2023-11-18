@@ -6,6 +6,7 @@ import java.util.List;
 import org.jboss.logging.Logger;
 
 import com.signomix.common.User;
+import com.signomix.common.db.IotDatabaseException;
 import com.signomix.common.db.IotDatabaseIface;
 import com.signomix.common.db.SentinelDaoIface;
 import com.signomix.common.iot.Device;
@@ -46,16 +47,33 @@ public class SentinelLogic {
     }
 
     public SentinelConfig getSentinelConfig(User user, long id) {
-        throw new UnsupportedOperationException("Not supported yet.");
+        SentinelConfig config = null;
+        try {
+            config = sentinelDao.getConfig(id);
+        } catch (Exception e) {
+            e.printStackTrace();
+            logger.error(e.getMessage());
+        }
+        return config;
     }
 
     public List<SentinelConfig> getSentinelConfigs(User user, int limit, int offset) {
-        throw new UnsupportedOperationException("Not supported yet.");
+        List<SentinelConfig> configs = new ArrayList<>();
+        try {
+            configs = sentinelDao.getConfigs(user.uid, limit, offset);
+        } catch (Exception e) {
+            e.printStackTrace();
+            logger.error(e.getMessage());
+        }
+        return configs;
     }
 
-    public void addSentinelConfig(User user, SentinelConfig config) {
+    public void createSentinelConfig(User user, SentinelConfig config) {
         try {
-            sentinelDao.addConfig(config);
+            config.userId = user.uid;
+            config.organizationId = user.organization;
+            long id = sentinelDao.addConfig(config);
+            config.id = id;
             List<Device> devices = getSentinelDevices(config, config.userId.toString(), config.organizationId);
             addSentinelDevices(config, devices);
         } catch (Exception e) {
@@ -71,6 +89,15 @@ public class SentinelLogic {
     public void removeSentinelConfig(User user, long id) {
         throw new UnsupportedOperationException("Not supported yet.");
     }
+
+    /* public void createSentinelConfig(User user, SentinelConfig config) {
+        try {
+            sentinelDao.addConfig(config);
+        } catch (IotDatabaseException e) {
+            logger.error(e.getMessage());
+            e.printStackTrace();
+        }
+    } */
 
     private List<Device> getSentinelDevices(SentinelConfig config, String userId, long organizationId) {
         ArrayList<Device> devices = new ArrayList<>();
@@ -128,4 +155,6 @@ public class SentinelLogic {
             }
         }
     }
+
+
 }

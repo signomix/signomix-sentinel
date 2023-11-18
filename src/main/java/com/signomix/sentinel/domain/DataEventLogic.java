@@ -1,23 +1,27 @@
 package com.signomix.sentinel.domain;
 
-import java.security.Timestamp;
+import java.sql.Timestamp;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 import org.jboss.logging.Logger;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.signomix.common.db.IotDatabaseException;
 import com.signomix.common.db.IotDatabaseIface;
 import com.signomix.common.db.SentinelDaoIface;
 import com.signomix.common.db.SignalDaoIface;
 import com.signomix.common.iot.sentinel.AlarmCondition;
 import com.signomix.common.iot.sentinel.SentinelConfig;
-import com.signomix.common.iot.sentinel.Signal;
 
 import io.agroal.api.AgroalDataSource;
 import io.quarkus.agroal.DataSource;
+import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 
 @ApplicationScoped
@@ -41,7 +45,7 @@ public class DataEventLogic {
     @Inject
     SignalLogic sentinelLogic;
 
-    public void onStartup() {
+    void onStart(@Observes StartupEvent ev) {
         sentinelDao = new com.signomix.common.tsdb.SentinelDao();
         sentinelDao.setDatasource(tsDs);
         olapDao = new com.signomix.common.tsdb.IotDatabaseDao();
@@ -70,8 +74,8 @@ public class DataEventLogic {
             return;
         }
         // check alert conditions
-        for (SentinelConfig config : configs) {
-            runSentinelCheck(config, deviceEui);
+        for (int i=0; i<configs.size(); i++) {
+            runSentinelCheck((SentinelConfig)configs.get(i), deviceEui);
         }
     }
 
@@ -90,7 +94,7 @@ public class DataEventLogic {
         checkSentinelRelatedData(config, deviceChannelMap, deviceEui);
 
         // create and save alert object
-        Alert alert = new Alert(null, 0, deviceEui, "after receiving data from " + deviceEui + " sentinel fire alarm");
+        //Alert alert = new Alert(null, 0, deviceEui, "after receiving data from " + deviceEui + " sentinel fire alarm");
     }
 
     private void checkSentinelRelatedData(SentinelConfig config, Map deviceChannelMap, String eui) {
@@ -105,12 +109,13 @@ public class DataEventLogic {
                 HashMap<String, Double> valuesMap = new HashMap<>(); // key: channel, value: value
                 // TODO: fill valuesMap
                 channelMap.forEach((channel, column) -> {
-                    valuesMap.put(channel, (Double) deviceParamsAndValues.get(Integer.parseInt(column.substring(1))));
+                    valuesMap.put(column, (Double) deviceParamsAndValues.get(1+Integer.parseInt(channel.substring(1))));
                 });
                 boolean conditionsMet = runQuery(config, valuesMap);
 
                 if (conditionsMet) {
-                    Signal signal= new Signal();
+                    logger.info("Conditions met for sentinel: " + config.id);
+                    /* Signal signal= new Signal();
                     signal.deviceEui = deviceEui;
                     signal.level = config.alertLevel;
                     signal.messageEn = config.alertMessage;
@@ -125,7 +130,10 @@ public class DataEventLogic {
                     } catch (IotDatabaseException e) {
                         logger.error(e.getMessage());
                         e.printStackTrace();
-                    }
+                    } */
+                    sentinelDao.addSentinelEvent(config.id, deviceEui, config.alertLevel, config.alertMessage, config.alertMessage);
+                }else{
+                    logger.info("Conditions not met for sentinel: " + config.id);
                 }
             }
         } catch (IotDatabaseException e) {
@@ -142,12 +150,35 @@ public class DataEventLogic {
      * @return true if the conditions are met, false otherwise
      */
     private boolean runQuery(SentinelConfig config, Map<String, Double> values) {
+        ObjectMapper mapper = new ObjectMapper();
+        try {
+            logger.info(mapper.writeValueAsString(config));
+        } catch (JsonProcessingException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
         AlarmCondition condition;
         boolean conditionsMet = false;
         Double value;
-        if (config.conditions != null) {
-            for (int i = 0; i < config.conditions.size() && i < 2; i++) {
-                condition = config.conditions.get(i);
+        List conditions = config.conditions;
+        LinkedHashMap<String, Object> conditionMap = new LinkedHashMap<>();
+        if (conditions != null) {
+            for (int i = 0; i < conditions.size(); i++) {
+                if(i>1){
+                    break;
+                }
+                logger.info("conditions class: "+conditions.getClass().getName());
+                logger.info("conditions element class: "+conditions.get(i).getClass().getName());
+                conditionMap=(LinkedHashMap<String, Object>)conditions.get(i);
+                condition = new AlarmCondition();
+                condition.measurement = (String) conditionMap.get("measurement");
+                condition.condition1 = (Integer) conditionMap.get("condition1");
+                condition.value1 = (Double) conditionMap.get("value1");
+                condition.condition2 = (Integer) conditionMap.get("condition2");
+                condition.value2 = (Double) conditionMap.get("value2");
+                condition.orOperator = (Boolean) conditionMap.get("orOperator");
+                condition.conditionOperator = (Integer) conditionMap.get("conditionOperator");
+
                 boolean ok=false;
                 value = values.get(condition.measurement);
                 if (value == null) {

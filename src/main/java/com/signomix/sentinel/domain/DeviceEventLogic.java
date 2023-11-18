@@ -9,7 +9,9 @@ import com.signomix.common.iot.Device;
 
 import io.agroal.api.AgroalDataSource;
 import io.quarkus.agroal.DataSource;
+import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 
 @ApplicationScoped
@@ -29,7 +31,7 @@ public class DeviceEventLogic {
     SentinelDaoIface sentinelDao;
     IotDatabaseIface olapDao;
 
-    public void onStartup() {
+    void onStart(@Observes StartupEvent ev) {
         sentinelDao = new com.signomix.common.tsdb.SentinelDao();
         sentinelDao.setDatasource(tsDs);
         olapDao = new com.signomix.common.tsdb.IotDatabaseDao();

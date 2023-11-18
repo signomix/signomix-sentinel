@@ -29,5 +29,10 @@ public class SentinelPort {
         logger.info("getSentinelConfigs: "+limit+" "+offset);
         return sentinelLogic.getSentinelConfigs(user, limit, offset);
     }
+
+    public void createConfig(User user, SentinelConfig config){
+        logger.info("createSentinelConfig: "+config);
+        sentinelLogic.createSentinelConfig(user, config);
+    }
     
 }
