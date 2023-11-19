@@ -74,8 +74,8 @@ public class DataEventLogic {
             return;
         }
         // check alert conditions
-        for (int i=0; i<configs.size(); i++) {
-            runSentinelCheck((SentinelConfig)configs.get(i), deviceEui);
+        for (int i = 0; i < configs.size(); i++) {
+            runSentinelCheck((SentinelConfig) configs.get(i), deviceEui);
         }
     }
 
@@ -94,7 +94,8 @@ public class DataEventLogic {
         checkSentinelRelatedData(config, deviceChannelMap, deviceEui);
 
         // create and save alert object
-        //Alert alert = new Alert(null, 0, deviceEui, "after receiving data from " + deviceEui + " sentinel fire alarm");
+        // Alert alert = new Alert(null, 0, deviceEui, "after receiving data from " +
+        // deviceEui + " sentinel fire alarm");
     }
 
     private void checkSentinelRelatedData(SentinelConfig config, Map deviceChannelMap, String eui) {
@@ -109,30 +110,35 @@ public class DataEventLogic {
                 HashMap<String, Double> valuesMap = new HashMap<>(); // key: channel, value: value
                 // TODO: fill valuesMap
                 channelMap.forEach((channel, column) -> {
-                    valuesMap.put(column, (Double) deviceParamsAndValues.get(1+Integer.parseInt(channel.substring(1))));
+                    logger.info("column: " + column + ", value: "
+                            + (Double) deviceParamsAndValues.get(1 + Integer.parseInt(channel.substring(1))));
+                    valuesMap.put(column,
+                            (Double) deviceParamsAndValues.get(1 + Integer.parseInt(channel.substring(1))));
                 });
                 boolean conditionsMet = runQuery(config, valuesMap);
 
                 if (conditionsMet) {
                     logger.info("Conditions met for sentinel: " + config.id);
-                    /* Signal signal= new Signal();
-                    signal.deviceEui = deviceEui;
-                    signal.level = config.alertLevel;
-                    signal.messageEn = config.alertMessage;
-                    signal.messagePl = config.alertMessage;
-                    signal.sentinelConfigId = config.id;
-                    signal.userId = null;
-                    signal.organizationId = null;
-
-                    logger.info("Signal fired: " + signal.toString());
-                    try {
-                        signalDao.saveSignal(signal);
-                    } catch (IotDatabaseException e) {
-                        logger.error(e.getMessage());
-                        e.printStackTrace();
-                    } */
-                    sentinelDao.addSentinelEvent(config.id, deviceEui, config.alertLevel, config.alertMessage, config.alertMessage);
-                }else{
+                    /*
+                     * Signal signal= new Signal();
+                     * signal.deviceEui = deviceEui;
+                     * signal.level = config.alertLevel;
+                     * signal.messageEn = config.alertMessage;
+                     * signal.messagePl = config.alertMessage;
+                     * signal.sentinelConfigId = config.id;
+                     * signal.userId = null;
+                     * signal.organizationId = null;
+                     * 
+                     * logger.info("Signal fired: " + signal.toString());
+                     * try {
+                     * signalDao.saveSignal(signal);
+                     * } catch (IotDatabaseException e) {
+                     * logger.error(e.getMessage());
+                     * e.printStackTrace();
+                     * }
+                     */
+                    saveEvent(config, deviceEui);
+                } else {
                     logger.info("Conditions not met for sentinel: " + config.id);
                 }
             }
@@ -144,70 +150,112 @@ public class DataEventLogic {
     }
 
     /**
-     * Runs a query on the given SentinelConfig and values map to check if the conditions are met.
+     * Runs a query on the given SentinelConfig and values map to check if the
+     * conditions are met.
+     * 
      * @param config the SentinelConfig to use for the query
      * @param values the map of measurement values to use for the query
      * @return true if the conditions are met, false otherwise
      */
     private boolean runQuery(SentinelConfig config, Map<String, Double> values) {
-        ObjectMapper mapper = new ObjectMapper();
         try {
-            logger.info(mapper.writeValueAsString(config));
-        } catch (JsonProcessingException e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
-        }
-        AlarmCondition condition;
-        boolean conditionsMet = false;
-        Double value;
-        List conditions = config.conditions;
-        LinkedHashMap<String, Object> conditionMap = new LinkedHashMap<>();
-        if (conditions != null) {
-            for (int i = 0; i < conditions.size(); i++) {
-                if(i>1){
-                    break;
-                }
-                logger.info("conditions class: "+conditions.getClass().getName());
-                logger.info("conditions element class: "+conditions.get(i).getClass().getName());
-                conditionMap=(LinkedHashMap<String, Object>)conditions.get(i);
-                condition = new AlarmCondition();
-                condition.measurement = (String) conditionMap.get("measurement");
-                condition.condition1 = (Integer) conditionMap.get("condition1");
-                condition.value1 = (Double) conditionMap.get("value1");
-                condition.condition2 = (Integer) conditionMap.get("condition2");
-                condition.value2 = (Double) conditionMap.get("value2");
-                condition.orOperator = (Boolean) conditionMap.get("orOperator");
-                condition.conditionOperator = (Integer) conditionMap.get("conditionOperator");
-
-                boolean ok=false;
-                value = values.get(condition.measurement);
-                if (value == null) {
-                    continue;
-                }
-                if (condition.condition1 == AlarmCondition.CONDITION_GREATER) {
-                    ok = value.compareTo(condition.value1) > 0;
-                } else if (condition.condition1 == AlarmCondition.CONDITION_LESS) {
-                    ok = value.compareTo(condition.value1) < 0;
-                }
-                if (condition.orOperator) {
-                    if (condition.condition2 == AlarmCondition.CONDITION_GREATER) {
-                        ok = ok || value.compareTo(condition.value2) > 0;
-                    } else if (condition.condition2 == AlarmCondition.CONDITION_LESS) {
-                        ok = ok || value.compareTo(condition.value2) < 0;
+            ObjectMapper mapper = new ObjectMapper();
+            try {
+                logger.info(mapper.writeValueAsString(config));
+            } catch (JsonProcessingException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+            }
+            AlarmCondition condition;
+            boolean conditionsMet = false;
+            Double value;
+            List conditions = config.conditions;
+            LinkedHashMap<String, Object> conditionMap = new LinkedHashMap<>();
+            if (conditions != null) {
+                for (int i = 0; i < conditions.size(); i++) {
+                    if (i > 1) {
+                        break;
                     }
-                }
-                if (i == 0) {
-                    conditionsMet = ok;
-                } else {
-                    if (condition.conditionOperator == AlarmCondition.CONDITION_OPERATOR_AND) {
-                        conditionsMet = conditionsMet && ok;
-                    } else if (condition.conditionOperator == AlarmCondition.CONDITION_OPERATOR_OR) {
-                        conditionsMet = conditionsMet || ok;
+                    logger.info("conditions class: " + conditions.getClass().getName());
+                    logger.info("conditions element class: " + conditions.get(i).getClass().getName());
+                    conditionMap = (LinkedHashMap<String, Object>) conditions.get(i);
+                    condition = new AlarmCondition();
+                    condition.measurement = (String) conditionMap.get("measurement");
+                    condition.condition1 = (Integer) conditionMap.get("condition1");
+                    condition.value1 = (Double) conditionMap.get("value1");
+                    condition.condition2 = (Integer) conditionMap.get("condition2");
+                    condition.value2 = (Double) conditionMap.get("value2");
+                    condition.orOperator = (Boolean) conditionMap.get("orOperator");
+                    condition.conditionOperator = (Integer) conditionMap.get("conditionOperator");
+                    logger.info("condition:  " + condition.conditionOperator + " " + condition.measurement + ", "
+                            + condition.condition1 + " " + condition.value1 + " " + condition.orOperator + " "
+                            + condition.condition2 + " " + condition.value2);
+                    boolean ok = false;
+                    value = values.get(condition.measurement);
+                    if (value == null) {
+                        logger.info(i + " value for " + condition.measurement + " not found");
+                        continue;
+                    }
+
+                    if (condition.condition1 == AlarmCondition.CONDITION_GREATER) {
+                        ok = value.compareTo(condition.value1) > 0;
+                    } else if (condition.condition1 == AlarmCondition.CONDITION_LESS) {
+                        ok = value.compareTo(condition.value1) < 0;
+                    }
+                    if (condition.orOperator) {
+                        if (condition.condition2 == AlarmCondition.CONDITION_GREATER) {
+                            ok = ok || value.compareTo(condition.value2) > 0;
+                        } else if (condition.condition2 == AlarmCondition.CONDITION_LESS) {
+                            ok = ok || value.compareTo(condition.value2) < 0;
+                        }
+                    }
+                    if (i == 0) {
+                        conditionsMet = ok;
+                    } else {
+                        if (null != condition.conditionOperator
+                                && condition.conditionOperator == AlarmCondition.CONDITION_OPERATOR_AND) {
+                            conditionsMet = conditionsMet && ok;
+                        } else if (null != condition.conditionOperator
+                                && condition.conditionOperator == AlarmCondition.CONDITION_OPERATOR_OR) {
+                            conditionsMet = conditionsMet || ok;
+                        }
                     }
                 }
             }
+            return conditionsMet;
+        } catch (Exception e) {
+            logger.error(e.getMessage());
+            e.printStackTrace();
+            return false;
         }
-        return conditionsMet;
+    }
+
+    private void saveEvent(SentinelConfig config, String deviceEui) {
+        logger.info("Saving event for sentinel: " + config.id);
+        try {
+            sentinelDao.addSentinelEvent(config.id, deviceEui, config.alertLevel, config.alertMessage,
+                    config.alertMessage);
+        } catch (IotDatabaseException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
+        if (config.team != null && !config.team.isEmpty()) {
+            String[] teamMembers = config.team.split(",");
+            for (int i = 0; i < teamMembers.length; i++) {
+                if (teamMembers[i].isEmpty()) {
+                    continue;
+                }
+            }
+        }
+        if (config.administrators != null && !config.administrators.isEmpty()) {
+            String[] admins = config.administrators.split(",");
+            for (int i = 0; i < admins.length; i++) {
+                if (admins[i].isEmpty()) {
+                    continue;
+                }
+                // TODO: notyfikacja
+            }
+        }
     }
 
 }

@@ -34,5 +34,15 @@ public class SentinelPort {
         logger.info("createSentinelConfig: "+config);
         sentinelLogic.createSentinelConfig(user, config);
     }
+
+    public void updateConfig(User user, SentinelConfig config){
+        logger.info("updateSentinelConfig: "+config);
+        sentinelLogic.updateSentinelConfig(user, config);
+    }
+
+    public void deleteConfig(User user, long id){
+        logger.info("deleteSentinelConfig: "+id);
+        sentinelLogic.deleteSentinelConfig(user, id);
+    }
     
 }

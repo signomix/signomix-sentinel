@@ -11,9 +11,11 @@ import com.signomix.sentinel.port.in.SentinelPort;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.QueryParam;
@@ -63,6 +65,30 @@ public class SentinelRestApi {
             return Response.status(Response.Status.UNAUTHORIZED).build();
         }
         sentinelPort.createConfig(user,config);
+        return Response.ok().build();
+    }
+
+    @PUT
+    @Path("/{id}")
+    public Response updateSentinelConfig(@HeaderParam("Authentication") String token, @PathParam("id") String id, SentinelConfig config) {
+        logger.info("createSentinelConfig: "+config);
+        User user = authPort.getUser(token);
+        if(user==null){
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+        sentinelPort.updateConfig(user,config);
+        return Response.ok().build();
+    }
+
+    @DELETE
+    @Path("/{id}")
+    public Response deleteSentinelConfig(@HeaderParam("Authentication") String token, @PathParam("id") long id) {
+        logger.info("deleteSentinelConfig: "+id);
+        User user = authPort.getUser(token);
+        if(user==null){
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+        sentinelPort.deleteConfig(user,id);
         return Response.ok().build();
     }
     

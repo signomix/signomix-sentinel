@@ -83,11 +83,24 @@ public class SentinelLogic {
     }
 
     public void updateSentinelConfig(User user, SentinelConfig config) {
-        throw new UnsupportedOperationException("Not supported yet.");
+        try{
+            sentinelDao.updateConfig(config);
+            sentinelDao.removeDevices(config.id);
+            List<Device> devices = getSentinelDevices(config, config.userId.toString(), config.organizationId);
+            addSentinelDevices(config, devices);
+        }catch(Exception e){
+            e.printStackTrace();
+            logger.error(e.getMessage());
+        }
     }
 
-    public void removeSentinelConfig(User user, long id) {
-        throw new UnsupportedOperationException("Not supported yet.");
+    public void deleteSentinelConfig(User user, long id) {
+        try{
+            sentinelDao.removeConfig(id);
+        }catch(Exception e){
+            e.printStackTrace();
+            logger.error(e.getMessage());
+        }
     }
 
     /* public void createSentinelConfig(User user, SentinelConfig config) {
