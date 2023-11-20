@@ -63,4 +63,17 @@ public class SignalLogic {
         }
         return signal;
     }
+
+    public void deleteSignal(User user, long id){
+        try {
+            Signal signal = signalDao.getSignalById(id);
+            if(signal!=null && signal.userId.equals(user.uid)){
+                signalDao.deleteSignal(id);
+            }else{
+                logger.error("Signal not found or not owned by user: "+id+" "+user.uid);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
 }

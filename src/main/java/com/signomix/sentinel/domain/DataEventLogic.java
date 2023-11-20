@@ -2,10 +2,13 @@ package com.signomix.sentinel.domain;
 
 import java.sql.Timestamp;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.microprofile.reactive.messaging.Channel;
+import org.eclipse.microprofile.reactive.messaging.Emitter;
 import org.jboss.logging.Logger;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -14,8 +17,11 @@ import com.signomix.common.db.IotDatabaseException;
 import com.signomix.common.db.IotDatabaseIface;
 import com.signomix.common.db.SentinelDaoIface;
 import com.signomix.common.db.SignalDaoIface;
+import com.signomix.common.event.IotEvent;
+import com.signomix.common.iot.Device;
 import com.signomix.common.iot.sentinel.AlarmCondition;
 import com.signomix.common.iot.sentinel.SentinelConfig;
+import com.signomix.common.iot.sentinel.Signal;
 
 import io.agroal.api.AgroalDataSource;
 import io.quarkus.agroal.DataSource;
@@ -41,9 +47,14 @@ public class DataEventLogic {
     SentinelDaoIface sentinelDao;
     IotDatabaseIface olapDao;
     SignalDaoIface signalDao;
+    IotDatabaseIface oltpDao;
 
     @Inject
     SignalLogic sentinelLogic;
+
+    @Inject
+    @Channel("alerts")
+    Emitter<String> alertEmitter;
 
     void onStart(@Observes StartupEvent ev) {
         sentinelDao = new com.signomix.common.tsdb.SentinelDao();
@@ -52,6 +63,8 @@ public class DataEventLogic {
         olapDao.setDatasource(olapDs);
         signalDao = new com.signomix.common.tsdb.SignalDao();
         signalDao.setDatasource(tsDs);
+        oltpDao = new com.signomix.common.tsdb.IotDatabaseDao();
+        oltpDao.setDatasource(tsDs);
     }
 
     /**
@@ -232,6 +245,24 @@ public class DataEventLogic {
 
     private void saveEvent(SentinelConfig config, String deviceEui) {
         logger.info("Saving event for sentinel: " + config.id);
+        String alertType;
+        switch (config.alertLevel) {
+            case 0:
+                alertType = "GENERAL";
+                break;
+            case 1:
+                alertType = "INFO";
+                break;
+            case 2:
+                alertType = "WARNING";
+                break;
+            case 3:
+                alertType = "ALERT";
+                break;
+            default:
+                alertType = "ALERT";
+        }
+        long createdAt = System.currentTimeMillis();
         try {
             sentinelDao.addSentinelEvent(config.id, deviceEui, config.alertLevel, config.alertMessage,
                     config.alertMessage);
@@ -239,12 +270,15 @@ public class DataEventLogic {
             // TODO Auto-generated catch block
             e.printStackTrace();
         }
+        // alert won't be sent to its creator (owner) - only to team members and admins
         if (config.team != null && !config.team.isEmpty()) {
             String[] teamMembers = config.team.split(",");
             for (int i = 0; i < teamMembers.length; i++) {
                 if (teamMembers[i].isEmpty()) {
                     continue;
                 }
+                saveSignal(config.alertLevel, config.id, config.organizationId, teamMembers[i], deviceEui, config.alertMessage, createdAt);
+                sendAlert(alertType, teamMembers[i], deviceEui, config.alertMessage, createdAt);
             }
         }
         if (config.administrators != null && !config.administrators.isEmpty()) {
@@ -253,8 +287,34 @@ public class DataEventLogic {
                 if (admins[i].isEmpty()) {
                     continue;
                 }
-                // TODO: notyfikacja
+                saveSignal(config.alertLevel, config.id, config.organizationId, admins[i], deviceEui, config.alertMessage, createdAt);
+                sendAlert(alertType, admins[i], deviceEui, config.alertMessage, createdAt);
             }
+        }
+    }
+
+    private void sendAlert(String alertType, String userId, String deviceEui, String alertMessage, long createdAt) {
+        try {
+            oltpDao.addAlert(alertType, deviceEui, userId, alertMessage, createdAt);
+        } catch (IotDatabaseException e) {
+            e.printStackTrace();
+        }
+        alertEmitter.send(userId + "\t" + deviceEui + "\t" + alertType+ "\t" + alertMessage);
+    }
+
+    private void saveSignal(int alertLevel, long configId, long organizationId, String userId, String deviceEui, String alertMessage, long createdAt) {
+        try {
+            Signal signal = new Signal();
+            signal.deviceEui = deviceEui;
+            signal.level = alertLevel;
+            signal.messageEn = alertMessage;
+            signal.messagePl = alertMessage;
+            signal.sentinelConfigId = configId;
+            signal.userId = userId;
+            signal.organizationId = organizationId;
+            signalDao.saveSignal(signal);
+        } catch (IotDatabaseException e) {
+            e.printStackTrace();
         }
     }
 

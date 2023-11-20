@@ -11,6 +11,7 @@ import com.signomix.sentinel.port.in.SignalPort;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.OPTIONS;
@@ -40,7 +41,7 @@ public class SignalRestApi {
 
     @GET
     public Response getSignals(@HeaderParam("Authentication") String token, @QueryParam("limit") int limit, @QueryParam("offset") int offset) {
-        logger.info("getSentinelConfigs: "+limit+" "+offset);
+        logger.info("getSignals: "+limit+" "+offset);
         User user = authPort.getUser(token);
         List<Signal> signals = signalPort.getSignals(user, limit, offset);
         return Response.ok().entity(signals).build();
@@ -52,6 +53,14 @@ public class SignalRestApi {
         User user = authPort.getUser(token);
         Signal signal = signalPort.getSignal(user, id);
         return Response.ok().entity(signal).build();
+    }
+
+    @DELETE
+    @Path("/{id}")
+    public Response deleteSignal(@HeaderParam("Authentication") String token, @PathParam("id") long id) {
+        User user = authPort.getUser(token);
+        signalPort.deleteSignal(user, id);
+        return Response.ok().entity("OK").build();
     }
     
 }

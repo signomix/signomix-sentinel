@@ -30,4 +30,8 @@ public class SignalPort {
     public Signal getSignal(User user, long id) {
         return signalLogic.getSignal(user, id);
     }
+
+    public void deleteSignal(User user, long id) {
+        signalLogic.deleteSignal(user, id);
+    }
 }
