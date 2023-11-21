@@ -137,7 +137,7 @@ public class SentinelLogic {
         } else if (config.tagName != null && !config.tagName.isEmpty() && config.tagValue != null
                 && !config.tagValue.isEmpty()) {
             try {
-                List<Device> tagDevices = oltpDao.getDevicesByTag(false, userId, organizationId, config.tagName,
+                List<Device> tagDevices = oltpDao.getDevicesByTag(userId, organizationId, config.tagName,
                         config.tagValue);
                 if (tagDevices != null) {
                     devices.addAll(tagDevices);

@@ -88,6 +88,10 @@ public class DataEventLogic {
         }
         // check alert conditions
         for (int i = 0; i < configs.size(); i++) {
+            // skip inactive sentinels
+            if (!configs.get(i).active) {
+                continue;
+            }
             runSentinelCheck((SentinelConfig) configs.get(i), deviceEui);
         }
     }
@@ -105,10 +109,6 @@ public class DataEventLogic {
         }
 
         checkSentinelRelatedData(config, deviceChannelMap, deviceEui);
-
-        // create and save alert object
-        // Alert alert = new Alert(null, 0, deviceEui, "after receiving data from " +
-        // deviceEui + " sentinel fire alarm");
     }
 
     private void checkSentinelRelatedData(SentinelConfig config, Map deviceChannelMap, String eui) {
@@ -129,30 +129,30 @@ public class DataEventLogic {
                             (Double) deviceParamsAndValues.get(1 + Integer.parseInt(channel.substring(1))));
                 });
                 boolean conditionsMet = runQuery(config, valuesMap);
+                int status = sentinelDao.getSentinelStatus(config.id);
 
-                if (conditionsMet) {
-                    logger.info("Conditions met for sentinel: " + config.id);
-                    /*
-                     * Signal signal= new Signal();
-                     * signal.deviceEui = deviceEui;
-                     * signal.level = config.alertLevel;
-                     * signal.messageEn = config.alertMessage;
-                     * signal.messagePl = config.alertMessage;
-                     * signal.sentinelConfigId = config.id;
-                     * signal.userId = null;
-                     * signal.organizationId = null;
-                     * 
-                     * logger.info("Signal fired: " + signal.toString());
-                     * try {
-                     * signalDao.saveSignal(signal);
-                     * } catch (IotDatabaseException e) {
-                     * logger.error(e.getMessage());
-                     * e.printStackTrace();
-                     * }
-                     */
-                    saveEvent(config, deviceEui);
-                } else {
+                if (!conditionsMet) {
                     logger.info("Conditions not met for sentinel: " + config.id);
+                    if (status != 0) {
+                        // status changed to 0
+                        saveResetEvent(config, deviceEui);
+                        if (config.conditionOk) {
+                            sendAlert("INFO", config.userId, deviceEui, config.conditionOkMessage,
+                                    System.currentTimeMillis());
+                        }
+                    }
+                    continue;
+                }
+                logger.info("Conditions met for sentinel: " + config.id);
+                if (config.everyTime) {
+                    saveEvent(config, deviceEui);
+                    continue;
+                } else {
+                    // check if the event was already saved
+
+                    if (status == 0) {
+                        saveEvent(config, deviceEui);
+                    }
                 }
             }
         } catch (IotDatabaseException e) {
@@ -243,6 +243,15 @@ public class DataEventLogic {
         }
     }
 
+    private void saveResetEvent(SentinelConfig config, String deviceEui) {
+        try {
+            sentinelDao.addSentinelEvent(config.id, deviceEui, 0, "", "");
+        } catch (IotDatabaseException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
+    }
+
     private void saveEvent(SentinelConfig config, String deviceEui) {
         logger.info("Saving event for sentinel: " + config.id);
         String alertType;
@@ -277,7 +286,8 @@ public class DataEventLogic {
                 if (teamMembers[i].isEmpty()) {
                     continue;
                 }
-                saveSignal(config.alertLevel, config.id, config.organizationId, teamMembers[i], deviceEui, config.alertMessage, createdAt);
+                saveSignal(config.alertLevel, config.id, config.organizationId, teamMembers[i], deviceEui,
+                        config.alertMessage, createdAt);
                 sendAlert(alertType, teamMembers[i], deviceEui, config.alertMessage, createdAt);
             }
         }
@@ -287,7 +297,8 @@ public class DataEventLogic {
                 if (admins[i].isEmpty()) {
                     continue;
                 }
-                saveSignal(config.alertLevel, config.id, config.organizationId, admins[i], deviceEui, config.alertMessage, createdAt);
+                saveSignal(config.alertLevel, config.id, config.organizationId, admins[i], deviceEui,
+                        config.alertMessage, createdAt);
                 sendAlert(alertType, admins[i], deviceEui, config.alertMessage, createdAt);
             }
         }
@@ -299,10 +310,11 @@ public class DataEventLogic {
         } catch (IotDatabaseException e) {
             e.printStackTrace();
         }
-        alertEmitter.send(userId + "\t" + deviceEui + "\t" + alertType+ "\t" + alertMessage);
+        alertEmitter.send(userId + "\t" + deviceEui + "\t" + alertType + "\t" + alertMessage);
     }
 
-    private void saveSignal(int alertLevel, long configId, long organizationId, String userId, String deviceEui, String alertMessage, long createdAt) {
+    private void saveSignal(int alertLevel, long configId, long organizationId, String userId, String deviceEui,
+            String alertMessage, long createdAt) {
         try {
             Signal signal = new Signal();
             signal.deviceEui = deviceEui;
