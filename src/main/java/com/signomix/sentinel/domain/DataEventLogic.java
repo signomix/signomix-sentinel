@@ -136,10 +136,6 @@ public class DataEventLogic {
                     if (status != 0) {
                         // status changed to 0
                         saveResetEvent(config, deviceEui);
-                        if (config.conditionOk) {
-                            sendAlert("INFO", config.userId, deviceEui, config.conditionOkMessage,
-                                    System.currentTimeMillis());
-                        }
                     }
                     continue;
                 }
@@ -149,7 +145,6 @@ public class DataEventLogic {
                     continue;
                 } else {
                     // check if the event was already saved
-
                     if (status == 0) {
                         saveEvent(config, deviceEui);
                     }
@@ -245,32 +240,46 @@ public class DataEventLogic {
 
     private void saveResetEvent(SentinelConfig config, String deviceEui) {
         try {
-            sentinelDao.addSentinelEvent(config.id, deviceEui, 0, "", "");
+            sentinelDao.addSentinelEvent(config.id, deviceEui, (-1 * config.alertLevel), config.conditionOkMessage,
+                    config.conditionOkMessage);
         } catch (IotDatabaseException e) {
             // TODO Auto-generated catch block
             e.printStackTrace();
+        }
+        if (!config.conditionOk) {
+            logger.info("Condition OK not set for sentinel: " + config.id);
+            return;
+        }
+        long createdAt = System.currentTimeMillis();
+        String alertType = getAlertType(config.alertLevel);
+        // alert won't be sent to its creator (owner) - only to team members and admins
+        if (config.team != null && !config.team.isEmpty()) {
+            String[] teamMembers = config.team.split(",");
+            for (int i = 0; i < teamMembers.length; i++) {
+                if (teamMembers[i].isEmpty()) {
+                    continue;
+                }
+                saveSignal(-1 * config.alertLevel, config.id, config.organizationId, teamMembers[i], deviceEui,
+                        config.conditionOkMessage, createdAt);
+                sendAlert(alertType, teamMembers[i], deviceEui, config.conditionOkMessage, createdAt);
+            }
+        }
+        if (config.administrators != null && !config.administrators.isEmpty()) {
+            String[] admins = config.administrators.split(",");
+            for (int i = 0; i < admins.length; i++) {
+                if (admins[i].isEmpty()) {
+                    continue;
+                }
+                saveSignal(-1 * config.alertLevel, config.id, config.organizationId, admins[i], deviceEui,
+                        config.conditionOkMessage, createdAt);
+                sendAlert(alertType, admins[i], deviceEui, config.conditionOkMessage, createdAt);
+            }
         }
     }
 
     private void saveEvent(SentinelConfig config, String deviceEui) {
         logger.info("Saving event for sentinel: " + config.id);
-        String alertType;
-        switch (config.alertLevel) {
-            case 0:
-                alertType = "GENERAL";
-                break;
-            case 1:
-                alertType = "INFO";
-                break;
-            case 2:
-                alertType = "WARNING";
-                break;
-            case 3:
-                alertType = "ALERT";
-                break;
-            default:
-                alertType = "ALERT";
-        }
+        String alertType = getAlertType(config.alertLevel);
         long createdAt = System.currentTimeMillis();
         try {
             sentinelDao.addSentinelEvent(config.id, deviceEui, config.alertLevel, config.alertMessage,
@@ -328,6 +337,27 @@ public class DataEventLogic {
         } catch (IotDatabaseException e) {
             e.printStackTrace();
         }
+    }
+
+    private String getAlertType(int alertLevel) {
+        String alertType;
+        switch (alertLevel) {
+            case 0:
+                alertType = "GENERAL";
+                break;
+            case 1:
+                alertType = "INFO";
+                break;
+            case 2:
+                alertType = "WARNING";
+                break;
+            case 3:
+                alertType = "ALERT";
+                break;
+            default:
+                alertType = "ALERT";
+        }
+        return alertType;
     }
 
 }

@@ -40,11 +40,18 @@ public class SignalRestApi {
     }
 
     @GET
-    public Response getSignals(@HeaderParam("Authentication") String token, @QueryParam("limit") int limit, @QueryParam("offset") int offset) {
-        logger.info("getSignals: "+limit+" "+offset);
-        User user = authPort.getUser(token);
-        List<Signal> signals = signalPort.getSignals(user, limit, offset);
-        return Response.ok().entity(signals).build();
+    public Response getSignals(@HeaderParam("Authentication") String token, @QueryParam("limit") int limit,
+            @QueryParam("offset") int offset) {
+        try {
+            logger.info("getSignals: " + limit + " " + offset);
+            User user = authPort.getUser(token);
+            List<Signal> signals = signalPort.getSignals(user, limit, offset);
+            return Response.ok().entity(signals).build();
+        } catch (Exception e) {
+            logger.error(e.getMessage());
+            e.printStackTrace();
+            return Response.serverError().entity(e.getMessage()).build();
+        }
     }
 
     @GET
@@ -62,5 +69,5 @@ public class SignalRestApi {
         signalPort.deleteSignal(user, id);
         return Response.ok().entity("OK").build();
     }
-    
+
 }

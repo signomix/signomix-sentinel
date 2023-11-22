@@ -35,10 +35,11 @@ public class SentinelRestApi {
     SentinelPort sentinelPort;
 
     @GET
-    public Response getSentinelConfigs(@HeaderParam("Authentication") String token, @QueryParam("limit") int limit, @QueryParam("offset") int offset) {
-        logger.info("getSentinelConfigs: "+limit+" "+offset);
+    public Response getSentinelConfigs(@HeaderParam("Authentication") String token, @QueryParam("limit") int limit,
+            @QueryParam("offset") int offset) {
+        logger.info("getSentinelConfigs: " + limit + " " + offset);
         User user = authPort.getUser(token);
-        if(user==null){
+        if (user == null) {
             return Response.status(Response.Status.UNAUTHORIZED).build();
         }
         List<SentinelConfig> configs = sentinelPort.getConfigs(user, limit, offset);
@@ -48,48 +49,61 @@ public class SentinelRestApi {
     @GET
     @Path("/{id}")
     public Response getSentinelConfig(@HeaderParam("Authentication") String token, @PathParam("id") long id) {
-        logger.info("getSentinelConfig: "+id);
+        logger.info("getSentinelConfig: " + id);
         User user = authPort.getUser(token);
-        if(user==null){
+        if (user == null) {
             return Response.status(Response.Status.UNAUTHORIZED).build();
         }
-        SentinelConfig config = sentinelPort.getConfig(user,id);
+        SentinelConfig config = sentinelPort.getConfig(user, id);
         return Response.ok().entity(config).build();
     }
 
     @POST
     public Response createSentinelConfig(@HeaderParam("Authentication") String token, SentinelConfig config) {
-        logger.info("createSentinelConfig: "+config);
-        User user = authPort.getUser(token);
-        if(user==null){
-            return Response.status(Response.Status.UNAUTHORIZED).build();
+        try {
+            logger.info("createSentinelConfig: " + config);
+            User user = authPort.getUser(token);
+            if (user == null) {
+                return Response.status(Response.Status.UNAUTHORIZED).build();
+            }
+            sentinelPort.createConfig(user, config);
+            return Response.ok().build();
+        } catch (Exception e) {
+            logger.error("createSentinelConfig: " + e.getMessage());
+            e.printStackTrace();
+            return Response.status(Response.Status.BAD_REQUEST).entity(e.getMessage()).build();
         }
-        sentinelPort.createConfig(user,config);
-        return Response.ok().build();
     }
 
     @PUT
     @Path("/{id}")
-    public Response updateSentinelConfig(@HeaderParam("Authentication") String token, @PathParam("id") String id, SentinelConfig config) {
-        logger.info("createSentinelConfig: "+config);
-        User user = authPort.getUser(token);
-        if(user==null){
-            return Response.status(Response.Status.UNAUTHORIZED).build();
+    public Response updateSentinelConfig(@HeaderParam("Authentication") String token, @PathParam("id") String id,
+            SentinelConfig config) {
+        try {
+            logger.info("createSentinelConfig: " + config);
+            User user = authPort.getUser(token);
+            if (user == null) {
+                return Response.status(Response.Status.UNAUTHORIZED).build();
+            }
+            sentinelPort.updateConfig(user, config);
+            return Response.ok().build();
+        } catch (Exception e) {
+            logger.error("createSentinelConfig: " + e.getMessage());
+            e.printStackTrace();
+            return Response.status(Response.Status.BAD_REQUEST).entity(e.getMessage()).build();
         }
-        sentinelPort.updateConfig(user,config);
-        return Response.ok().build();
     }
 
     @DELETE
     @Path("/{id}")
     public Response deleteSentinelConfig(@HeaderParam("Authentication") String token, @PathParam("id") long id) {
-        logger.info("deleteSentinelConfig: "+id);
+        logger.info("deleteSentinelConfig: " + id);
         User user = authPort.getUser(token);
-        if(user==null){
+        if (user == null) {
             return Response.status(Response.Status.UNAUTHORIZED).build();
         }
-        sentinelPort.deleteConfig(user,id);
+        sentinelPort.deleteConfig(user, id);
         return Response.ok().build();
     }
-    
+
 }
