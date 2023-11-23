@@ -74,7 +74,7 @@ public class SentinelLogic {
             config.organizationId = user.organization;
             long id = sentinelDao.addConfig(config);
             config.id = id;
-            List<Device> devices = getSentinelDevices(config, config.userId.toString(), config.organizationId);
+            List<Device> devices = getSentinelDevices(config, config.userId, config.organizationId);
             addSentinelDevices(config, devices);
         } catch (Exception e) {
             e.printStackTrace();
@@ -83,38 +83,53 @@ public class SentinelLogic {
     }
 
     public void updateSentinelConfig(User user, SentinelConfig config) {
-        try{
+        try {
+            SentinelConfig oldConfig = sentinelDao.getConfig(config.id);
+            sentinelDao.removeDevices(oldConfig.id);
             sentinelDao.updateConfig(config);
-            sentinelDao.removeDevices(config.id);
-            List<Device> devices = getSentinelDevices(config, config.userId.toString(), config.organizationId);
+            List<Device> devices = getSentinelDevices(config, config.userId, config.organizationId);
             addSentinelDevices(config, devices);
-        }catch(Exception e){
+        } catch (Exception e) {
+            e.printStackTrace();
+            logger.error(e.getMessage());
+        }
+    }
+
+    public void updateSentinelConfigDevices(User user, SentinelConfig config) {
+        try {
+            sentinelDao.removeDevices(config.id);
+            List<Device> devices = getSentinelDevices(config, config.userId, config.organizationId);
+            addSentinelDevices(config, devices);
+        } catch (Exception e) {
             e.printStackTrace();
             logger.error(e.getMessage());
         }
     }
 
     public void deleteSentinelConfig(User user, long id) {
-        try{
+        try {
+            sentinelDao.removeDevices(id);
             sentinelDao.removeConfig(id);
-        }catch(Exception e){
+        } catch (Exception e) {
             e.printStackTrace();
             logger.error(e.getMessage());
         }
     }
 
-    /* public void createSentinelConfig(User user, SentinelConfig config) {
-        try {
-            sentinelDao.addConfig(config);
-        } catch (IotDatabaseException e) {
-            logger.error(e.getMessage());
-            e.printStackTrace();
-        }
-    } */
+    /*
+     * public void createSentinelConfig(User user, SentinelConfig config) {
+     * try {
+     * sentinelDao.addConfig(config);
+     * } catch (IotDatabaseException e) {
+     * logger.error(e.getMessage());
+     * e.printStackTrace();
+     * }
+     * }
+     */
 
     private List<Device> getSentinelDevices(SentinelConfig config, String userId, long organizationId) {
         ArrayList<Device> devices = new ArrayList<>();
-        if (config.deviceEui != null) {
+        if (config.deviceEui != null && !config.deviceEui.isEmpty()) {
             try {
                 Device device = oltpDao.getDevice(config.deviceEui, false);
                 if (device != null) {
@@ -124,10 +139,12 @@ public class SentinelLogic {
                 e.printStackTrace();
                 logger.error(e.getMessage());
             }
-        } else if (config.groupEui != null) {
+        } else if (config.groupEui != null && !config.groupEui.isEmpty()) {
+            logger.info("adding devices to groupEui: " + config.groupEui);
             try {
-                List<Device> groupDevices = oltpDao.getGroupDevices(false, userId, organizationId, config.groupEui);
+                List<Device> groupDevices = oltpDao.getGroupDevices(userId, organizationId, config.groupEui);
                 if (groupDevices != null) {
+                    logger.info("groupDevices: " + groupDevices.size());
                     devices.addAll(groupDevices);
                 }
             } catch (Exception e) {
@@ -147,6 +164,7 @@ public class SentinelLogic {
                 logger.error(e.getMessage());
             }
         }
+        logger.info("sentinel devices: " + devices.size());
         return devices;
     }
 
@@ -168,6 +186,5 @@ public class SentinelLogic {
             }
         }
     }
-
 
 }
