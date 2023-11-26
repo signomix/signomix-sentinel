@@ -1,6 +1,7 @@
 package com.signomix.sentinel.domain;
 
 import java.sql.Timestamp;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -11,8 +12,6 @@ import org.eclipse.microprofile.reactive.messaging.Channel;
 import org.eclipse.microprofile.reactive.messaging.Emitter;
 import org.jboss.logging.Logger;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.signomix.common.Tag;
 import com.signomix.common.db.IotDatabaseException;
 import com.signomix.common.db.IotDatabaseIface;
@@ -82,26 +81,23 @@ public class DataEventLogic {
         try {
             Device device = olapDao.getDevice(deviceEui, false);
             List<Tag> tags = olapDao.getDeviceTags(deviceEui);
-            logger.info("tags: "+deviceEui +" "+tags.size());
-            if(tags.size()>0) {
-                logger.info("tag: "+tags.get(0).name+" "+tags.get(0).value);
-                tag=tags.get(0).name;
-                tagValue=tags.get(0).value;
+            logger.info("tags: " + deviceEui + " " + tags.size());
+            if (tags.size() > 0) {
+                // TODO: handle multiple tags
+                logger.info("tag: " + tags.get(0).name + " " + tags.get(0).value);
+                tag = tags.get(0).name;
+                tagValue = tags.get(0).value;
             }
-            //TODO: handle multiple tags
             groups = device.getGroups().split(",");
         } catch (IotDatabaseException e) {
             // TODO Auto-generated catch block
             e.printStackTrace();
         }
-        List<SentinelConfig> configList;
-        HashMap<Long,SentinelConfig> configs;
-        List<SentinelConfig> groupConfigs;
-        List<SentinelConfig> tagConfigs;
+
+        HashMap<Long, SentinelConfig> configs = new HashMap<>();
         // find all sentinel definitions related to the device
         try {
-            configList = sentinelDao.getConfigsByDevice(deviceEui, 1000, 0);
-            configs = new HashMap<>();
+            List<SentinelConfig> configList = sentinelDao.getConfigsByDevice(deviceEui, 1000, 0);
             for (SentinelConfig config : configList) {
                 configs.put(config.id, config);
             }
@@ -113,8 +109,9 @@ public class DataEventLogic {
         }
         if (!tag.isEmpty() && !tagValue.isEmpty()) {
             try {
-                tagConfigs = sentinelDao.getConfigsByTag(tag, tagValue, 1000, 0);
-                logger.info("Number of sentinel configs: " + deviceEui + " "+tag+":"+tagValue + " " + tagConfigs.size());
+                List<SentinelConfig> tagConfigs = sentinelDao.getConfigsByTag(tag, tagValue, 1000, 0);
+                logger.info("Number of sentinel configs for tag: " + deviceEui + " " + tag + ":" + tagValue + " "
+                        + tagConfigs.size());
                 for (SentinelConfig config : tagConfigs) {
                     configs.put(config.id, config);
                 }
@@ -125,7 +122,7 @@ public class DataEventLogic {
         }
         try {
             for (int i = 0; i < groups.length; i++) {
-                groupConfigs = sentinelDao.getConfigsByGroup(groups[i].trim(), 1000, 0);
+                List<SentinelConfig> groupConfigs = sentinelDao.getConfigsByGroup(groups[i].trim(), 1000, 0);
                 for (SentinelConfig config : groupConfigs) {
                     configs.put(config.id, config);
                 }
@@ -136,7 +133,7 @@ public class DataEventLogic {
             e.printStackTrace();
         }
 
-        // check alert conditions
+        // check alert conditions for each sentinel definition from configs map
         logger.info("Number of sentinel configs: " + deviceEui + " " + configs.size());
         Iterator it = configs.entrySet().iterator();
         while (it.hasNext()) {
@@ -147,27 +144,28 @@ public class DataEventLogic {
             }
             runSentinelCheck(config, deviceEui);
         }
-/*         for (int i = 0; i < configs.size(); i++) {
-            // skip inactive sentinels
-            if (!configs.get(i).active) {
-                continue;
-            }
-            runSentinelCheck((SentinelConfig) configs.get(i), deviceEui);
-        } */
     }
 
+    /**
+     * Runs a sentinel check for the given SentinelConfig.
+     * 
+     * @param config    SentinelConfig to use for the check
+     * @param deviceEui the EUI of the device that sent the data which triggered the
+     *                  check
+     */
     private void runSentinelCheck(SentinelConfig config, String deviceEui) {
         logger.info("Running sentinel check for config: " + config.id);
-        // find all devices related to the sentinel
-        Map<String, Map<String, String>> deviceChannelMap = null; // key: deviceEui, value: mapa (channel:nr_kolumny)
+        // In the map, key==deviceEui, value==(map of {columnName:channel}) where
+        // columnName is d1, d2, ..., d24
+        Map<String, Map<String, String>> deviceChannelMap = null;
         try {
-            deviceChannelMap = sentinelDao.getDevicesByConfigId(config.id, 1000, 0);
+            deviceChannelMap = sentinelDao.getDeviceChannelsByConfigId(config.id);
         } catch (IotDatabaseException e) {
             e.printStackTrace();
             logger.error(e.getMessage());
             return;
         }
-        if(deviceChannelMap==null) {
+        if (deviceChannelMap == null || deviceChannelMap.isEmpty()) {
             logger.info("No devices found for sentinel: " + config.id);
             return;
         }
@@ -175,52 +173,62 @@ public class DataEventLogic {
     }
 
     private void checkSentinelRelatedData(SentinelConfig config, Map deviceChannelMap, String eui) {
-        List<List> values;
+        List<List<Object>> values;
+        logger.info("Checking sentinel related data for sentinel: " + config.id);
         try {
-            logger.info("deviceChannelMap size: " + deviceChannelMap.size());
-            deviceChannelMap.keySet().forEach((deviceEui) -> {
-                logger.info("deviceEui: " + deviceEui);
-            });
-            values = sentinelDao.getLastValuesByDeviceEui(eui);
-            logger.info(config.id+" number of values: " + values.size());
+            /*
+             * logger.info("deviceChannelMap size: " + deviceChannelMap.size());
+             * deviceChannelMap.keySet().forEach((deviceEui) -> {
+             * logger.info("deviceEui: " + deviceEui);
+             * });
+             */
+            values = sentinelDao.getLastValuesOfDevices(deviceChannelMap.keySet(), config.timeShift * 60);
+            logger.info(config.id + " number of values: " + values.size());
+            boolean configConditionsMet = false; // true if at least one device meets the conditions
             for (List deviceParamsAndValues : values) {
                 String deviceEui = (String) deviceParamsAndValues.get(0);
-                logger.info("VALUES FOR deviceEui: " + deviceEui);
-                Timestamp timestamp = (Timestamp) deviceParamsAndValues.get(1);
-                // od indeksu 2 do 26 sa wartosci (d1,d2,...,d24)
-                Map<String, String> channelMap = (Map<String, String>) deviceChannelMap.get(deviceEui);
-                if(channelMap==null) {
-                    logger.info("No channels found for device: " + deviceEui);
-                    continue;
+                // logger.info("VALUES FOR deviceEui: " + deviceEui);
+                boolean conditionsMet = runConfigQuery(config, deviceEui, deviceChannelMap, values);
+                configConditionsMet = configConditionsMet || conditionsMet;
+                /*
+                 * int status = sentinelDao.getSentinelStatus(config.id);
+                 * 
+                 * if (!conditionsMet) {
+                 * logger.info("Conditions not met for sentinel: " + config.id);
+                 * if (status > 0) {
+                 * // status changed to 0
+                 * saveResetEvent(config, deviceEui);
+                 * }
+                 * continue;
+                 * }
+                 * logger.info("Conditions met for sentinel: " + config.id);
+                 * if (config.everyTime) {
+                 * saveEvent(config, deviceEui);
+                 * continue;
+                 * } else {
+                 * // check if the event was already saved
+                 * if (status <= 0) {
+                 * saveEvent(config, deviceEui);
+                 * }
+                 * }
+                 */
+            }
+            int status = sentinelDao.getSentinelStatus(config.id);
+            if (!configConditionsMet) {
+                logger.info("Conditions not met for sentinel: " + config.id);
+                if (status > 0) {
+                    // status changed to 0
+                    saveResetEvent(config, eui);
                 }
-                HashMap<String, Double> valuesMap = new HashMap<>(); // key: channel, value: value
-                // TODO: fill valuesMap
-                channelMap.forEach((channel, column) -> {
-                    logger.info("column: " + column + ", value: "
-                            + (Double) deviceParamsAndValues.get(1 + Integer.parseInt(channel.substring(1))));
-                    valuesMap.put(column,
-                            (Double) deviceParamsAndValues.get(1 + Integer.parseInt(channel.substring(1))));
-                });
-                boolean conditionsMet = runQuery(config, valuesMap);
-                int status = sentinelDao.getSentinelStatus(config.id);
-
-                if (!conditionsMet) {
-                    logger.info("Conditions not met for sentinel: " + config.id);
-                    if (status != 0) {
-                        // status changed to 0
-                        saveResetEvent(config, deviceEui);
-                    }
-                    continue;
-                }
-                logger.info("Conditions met for sentinel: " + config.id);
-                if (config.everyTime) {
-                    saveEvent(config, deviceEui);
-                    continue;
-                } else {
-                    // check if the event was already saved
-                    if (status == 0) {
-                        saveEvent(config, deviceEui);
-                    }
+                return;
+            }
+            logger.info("Conditions met for sentinel: " + config.id);
+            if (config.everyTime) {
+                saveEvent(config, eui);
+            } else {
+                // check if the event was already saved
+                if (status <= 0) {
+                    saveEvent(config, eui);
                 }
             }
         } catch (IotDatabaseException e) {
@@ -234,26 +242,37 @@ public class DataEventLogic {
      * Runs a query on the given SentinelConfig and values map to check if the
      * conditions are met.
      * 
-     * @param config the SentinelConfig to use for the query
-     * @param values the map of measurement values to use for the query
-     * @return true if the conditions are met, false otherwise
+     * @param config           the SentinelConfig to use for the query
+     * @param deviceEui        the EUI of the device that sent the data which
+     *                         triggered the check
+     * @param deviceChannelMap the map of device EUIs and their channels
+     * @param values           the map of measurement values to use for the query
+     * @return
      */
-    private boolean runQuery(SentinelConfig config, Map<String, Double> values) {
+    private boolean runConfigQuery(SentinelConfig config, String deviceEui, Map deviceChannelMap,
+            List<List<Object>> values) {
         try {
-            ObjectMapper mapper = new ObjectMapper();
-            try {
-                logger.info(mapper.writeValueAsString(config));
-            } catch (JsonProcessingException e) {
-                // TODO Auto-generated catch block
-                e.printStackTrace();
-            }
+            // for debugging
+            /*
+             * ObjectMapper mapper = new ObjectMapper();
+             * try {
+             * logger.info(mapper.writeValueAsString(config));
+             * } catch (JsonProcessingException e) {
+             * e.printStackTrace();
+             * }
+             */
+            // end for debugging
+            logger.info("deviceChannelMap size: " + deviceChannelMap.size());
+            logger.info("conditions: " + config.conditions.size());
             AlarmCondition condition;
             boolean conditionsMet = false;
             Double value;
             List conditions = config.conditions;
-            LinkedHashMap<String, Object> conditionMap = new LinkedHashMap<>();
+            LinkedHashMap<String, Object> conditionMap = new LinkedHashMap();
             if (conditions != null) {
+                boolean actualConditionMet;
                 for (int i = 0; i < conditions.size(); i++) {
+                    actualConditionMet = false;
                     if (i > 1) {
                         break;
                     }
@@ -271,34 +290,83 @@ public class DataEventLogic {
                     logger.info("condition:  " + condition.conditionOperator + " " + condition.measurement + ", "
                             + condition.condition1 + " " + condition.value1 + " " + condition.orOperator + " "
                             + condition.condition2 + " " + condition.value2);
-                    boolean ok = false;
-                    value = values.get(condition.measurement);
-                    if (value == null) {
-                        logger.info(i + " value for " + condition.measurement + " not found");
-                        continue;
-                    }
 
-                    if (condition.condition1 == AlarmCondition.CONDITION_GREATER) {
-                        ok = value.compareTo(condition.value1) > 0;
-                    } else if (condition.condition1 == AlarmCondition.CONDITION_LESS) {
-                        ok = value.compareTo(condition.value1) < 0;
+                    // as values holds all measurement values for all devices, we need to get only
+                    // values for the selected measurement (condition.measurement) from all devices
+                    ArrayList<Double> valuesList = new ArrayList<>();
+                    int measurementInex;
+                    Double val;
+                    Timestamp measurementTime; // time of the measurement is not used - only for debugging
+                    for (int j = 0; j < values.size(); j++) {
+                        // get column index for measurement
+                        Map<String, String> measurementMap = (Map) deviceChannelMap.get(deviceEui);
+                        String columnNumberStr = measurementMap.get(condition.measurement);
+                        // logger.info("COLUMN NAME: "+columnNumberStr);
+                        measurementInex = Integer.parseInt(columnNumberStr.substring(1));
+                        // logger.info("IDX: "+idx);
+                        // logger.info("VALUE: "+values.get(j).get(idx+1)+" expected:
+                        // "+condition.measurement);
+
+                        // measurementTime = (Timestamp) values.get(j).get(1); // time is always at
+                        // index 1
+                        val = (Double) values.get(j).get(measurementInex + 1);
+                        if (val != null) {
+                            valuesList.add(val);
+                        }
+                    }
+                    String valuesListStr = condition.measurement
+                            + (condition.condition1 == 1 ? " > " : " < " + condition.value1);
+                    String valuesListStr2 = "";
+                    if (condition.value2 != null) {
+                        valuesListStr2 = (condition.orOperator ? " or " : "")
+                                + (condition.condition2 == 1 ? " > " : " < " + condition.value2);
                     }
                     if (condition.orOperator) {
+                        valuesListStr += valuesListStr2;
+                    }
+                    logger.info("Condition to check: " + valuesListStr);
+                    if (valuesList.size() == 0) {
+                        logger.info(i + " values for " + condition.measurement + " not found");
+                        continue;
+                    }
+                    // Double tmpValue;
+                    if (condition.condition1 == AlarmCondition.CONDITION_GREATER) {
+                        for (int j = 0; j < valuesList.size(); j++) {
+                            actualConditionMet = actualConditionMet
+                                    || (valuesList.get(j).compareTo(condition.value1) > 0);
+                        }
+                        // ok = value.compareTo(condition.value1) > 0;
+                    } else if (condition.condition1 == AlarmCondition.CONDITION_LESS) {
+                        for (int j = 0; j < valuesList.size(); j++) {
+                            actualConditionMet = actualConditionMet
+                                    || (valuesList.get(j).compareTo(condition.value1) < 0);
+                        }
+                        // ok = value.compareTo(condition.value1) < 0;
+                    }
+                    if (condition.orOperator && condition.value2 != null) {
                         if (condition.condition2 == AlarmCondition.CONDITION_GREATER) {
-                            ok = ok || value.compareTo(condition.value2) > 0;
+                            for (int j = 0; j < valuesList.size(); j++) {
+                                actualConditionMet = actualConditionMet
+                                        || (valuesList.get(j).compareTo(condition.value2) > 0);
+                            }
+                            // ok = ok || value.compareTo(condition.value2) > 0;
                         } else if (condition.condition2 == AlarmCondition.CONDITION_LESS) {
-                            ok = ok || value.compareTo(condition.value2) < 0;
+                            for (int j = 0; j < valuesList.size(); j++) {
+                                actualConditionMet = actualConditionMet
+                                        || (valuesList.get(j).compareTo(condition.value2) < 0);
+                            }
+                            // ok = ok || value.compareTo(condition.value2) < 0;
                         }
                     }
                     if (i == 0) {
-                        conditionsMet = ok;
+                        conditionsMet = actualConditionMet;
                     } else {
                         if (null != condition.conditionOperator
                                 && condition.conditionOperator == AlarmCondition.CONDITION_OPERATOR_AND) {
-                            conditionsMet = conditionsMet && ok;
+                            conditionsMet = conditionsMet && actualConditionMet;
                         } else if (null != condition.conditionOperator
                                 && condition.conditionOperator == AlarmCondition.CONDITION_OPERATOR_OR) {
-                            conditionsMet = conditionsMet || ok;
+                            conditionsMet = conditionsMet || actualConditionMet;
                         }
                     }
                 }
@@ -320,7 +388,7 @@ public class DataEventLogic {
             e.printStackTrace();
         }
         if (!config.conditionOk) {
-            logger.info("Condition OK not set for sentinel: " + config.id);
+            // logger.info("Condition OK not set for sentinel: " + config.id);
             return;
         }
         long createdAt = System.currentTimeMillis();
