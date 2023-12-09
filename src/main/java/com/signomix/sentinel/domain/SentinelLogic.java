@@ -6,7 +6,6 @@ import java.util.List;
 import org.jboss.logging.Logger;
 
 import com.signomix.common.User;
-import com.signomix.common.db.IotDatabaseException;
 import com.signomix.common.db.IotDatabaseIface;
 import com.signomix.common.db.SentinelDaoIface;
 import com.signomix.common.iot.Device;

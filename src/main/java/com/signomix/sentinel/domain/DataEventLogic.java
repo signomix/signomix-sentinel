@@ -174,6 +174,7 @@ public class DataEventLogic {
 
     private void checkSentinelRelatedData(SentinelConfig config, Map deviceChannelMap, String eui) {
         List<List<Object>> values;
+        List<List<Object>> previousValues;
         logger.info("Checking sentinel related data for sentinel: " + config.id);
         try {
             /*
@@ -183,12 +184,13 @@ public class DataEventLogic {
              * });
              */
             values = sentinelDao.getLastValuesOfDevices(deviceChannelMap.keySet(), config.timeShift * 60);
+            previousValues = new ArrayList<>();
             logger.info(config.id + " number of values: " + values.size());
             boolean configConditionsMet = false; // true if at least one device meets the conditions
             for (List deviceParamsAndValues : values) {
                 String deviceEui = (String) deviceParamsAndValues.get(0);
                 // logger.info("VALUES FOR deviceEui: " + deviceEui);
-                boolean conditionsMet = runConfigQuery(config, deviceEui, deviceChannelMap, values);
+                boolean conditionsMet = runConfigQuery(config, deviceEui, deviceChannelMap, values, previousValues);
                 configConditionsMet = configConditionsMet || conditionsMet;
                 /*
                  * int status = sentinelDao.getSentinelStatus(config.id);
@@ -250,7 +252,7 @@ public class DataEventLogic {
      * @return
      */
     private boolean runConfigQuery(SentinelConfig config, String deviceEui, Map deviceChannelMap,
-            List<List<Object>> values) {
+            List<List<Object>> values, List<List<Object>> previousValues) {
         try {
             // for debugging
             /*
@@ -262,6 +264,9 @@ public class DataEventLogic {
              * }
              */
             // end for debugging
+
+            //TODO: take into account previous values (required for hysteresis)
+
             logger.info("deviceChannelMap size: " + deviceChannelMap.size());
             logger.info("conditions: " + config.conditions.size());
             AlarmCondition condition;
