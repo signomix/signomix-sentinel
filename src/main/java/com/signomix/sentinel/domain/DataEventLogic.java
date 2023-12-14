@@ -121,7 +121,12 @@ public class DataEventLogic {
             }
         }
         try {
+            String groupName;
             for (int i = 0; i < groups.length; i++) {
+                groupName = groups[i].trim();
+                if(groupName.isEmpty()){
+                    continue;
+                }
                 List<SentinelConfig> groupConfigs = sentinelDao.getConfigsByGroup(groups[i].trim(), 1000, 0);
                 for (SentinelConfig config : groupConfigs) {
                     configs.put(config.id, config);

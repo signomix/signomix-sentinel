@@ -13,7 +13,6 @@ public class DataEventReceiverPort {
 
     public void receive(byte[] eui) {
         String deviceEui=new String(eui);
-        System.out.println("Data received: " + deviceEui);
         dataEventLogic.handleDataReceivedEvent(deviceEui);
     }
     
