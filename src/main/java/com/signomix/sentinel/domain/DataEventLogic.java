@@ -18,11 +18,13 @@ import com.signomix.common.db.IotDatabaseIface;
 import com.signomix.common.db.SentinelDaoIface;
 import com.signomix.common.db.SignalDaoIface;
 import com.signomix.common.iot.Device;
+import com.signomix.common.iot.DeviceGroup;
 import com.signomix.common.iot.sentinel.AlarmCondition;
 import com.signomix.common.iot.sentinel.SentinelConfig;
 import com.signomix.common.iot.sentinel.Signal;
 
 import io.agroal.api.AgroalDataSource;
+import io.opentelemetry.sdk.metrics.internal.debug.DebugConfig;
 import io.quarkus.agroal.DataSource;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -124,7 +126,7 @@ public class DataEventLogic {
             String groupName;
             for (int i = 0; i < groups.length; i++) {
                 groupName = groups[i].trim();
-                if(groupName.isEmpty()){
+                if (groupName.isEmpty()) {
                     continue;
                 }
                 List<SentinelConfig> groupConfigs = sentinelDao.getConfigsByGroup(groups[i].trim(), 1000, 0);
@@ -197,45 +199,31 @@ public class DataEventLogic {
                 // logger.info("VALUES FOR deviceEui: " + deviceEui);
                 boolean conditionsMet = runConfigQuery(config, deviceEui, deviceChannelMap, values, previousValues);
                 configConditionsMet = configConditionsMet || conditionsMet;
-                /*
-                 * int status = sentinelDao.getSentinelStatus(config.id);
-                 * 
-                 * if (!conditionsMet) {
-                 * logger.info("Conditions not met for sentinel: " + config.id);
-                 * if (status > 0) {
-                 * // status changed to 0
-                 * saveResetEvent(config, deviceEui);
-                 * }
-                 * continue;
-                 * }
-                 * logger.info("Conditions met for sentinel: " + config.id);
-                 * if (config.everyTime) {
-                 * saveEvent(config, deviceEui);
-                 * continue;
-                 * } else {
-                 * // check if the event was already saved
-                 * if (status <= 0) {
-                 * saveEvent(config, deviceEui);
-                 * }
-                 * }
-                 */
             }
             int status = sentinelDao.getSentinelStatus(config.id);
+            Device device = null;
+            DeviceGroup group = null;
             if (!configConditionsMet) {
                 logger.info("Conditions not met for sentinel: " + config.id);
                 if (status > 0) {
                     // status changed to 0
-                    saveResetEvent(config, eui);
+                    if (device == null) {
+                        device = oltpDao.getDevice(eui, false);
+                    }
+                    saveResetEvent(config, device);
                 }
                 return;
             }
             logger.info("Conditions met for sentinel: " + config.id);
+            if (device == null) {
+                device = oltpDao.getDevice(eui, false);
+            }
             if (config.everyTime) {
-                saveEvent(config, eui);
+                saveEvent(config, device);
             } else {
                 // check if the event was already saved
                 if (status <= 0) {
-                    saveEvent(config, eui);
+                    saveEvent(config, device);
                 }
             }
         } catch (IotDatabaseException e) {
@@ -270,7 +258,7 @@ public class DataEventLogic {
              */
             // end for debugging
 
-            //TODO: take into account previous values (required for hysteresis)
+            // TODO: take into account previous values (required for hysteresis)
 
             logger.info("deviceChannelMap size: " + deviceChannelMap.size());
             logger.info("conditions: " + config.conditions.size());
@@ -389,10 +377,20 @@ public class DataEventLogic {
         }
     }
 
-    private void saveResetEvent(SentinelConfig config, String deviceEui) {
+    private void saveResetEvent(SentinelConfig config, Device device) {
+        DeviceGroup group = null;
+        if (config.groupEui != null && !config.groupEui.isEmpty()) {
+            try {
+                group = olapDao.getGroup(config.groupEui);
+            } catch (IotDatabaseException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+            }
+        }
+        String message = transformMessage(getMessageBody(config.conditionOkMessage), config, device, group, "", 0.0);
+        String alertSubject = transformMessage(getMessageSubject(config.conditionOkMessage), config, device, group, "", 0.0);
         try {
-            sentinelDao.addSentinelEvent(config.id, deviceEui, (-1 * config.alertLevel), config.conditionOkMessage,
-                    config.conditionOkMessage);
+            sentinelDao.addSentinelEvent(config.id, device.getEUI(), (-1 * config.alertLevel), message, message);
         } catch (IotDatabaseException e) {
             // TODO Auto-generated catch block
             e.printStackTrace();
@@ -410,9 +408,9 @@ public class DataEventLogic {
                 if (teamMembers[i].isEmpty()) {
                     continue;
                 }
-                saveSignal(-1 * config.alertLevel, config.id, config.organizationId, teamMembers[i], deviceEui,
-                        config.conditionOkMessage, createdAt);
-                sendAlert(alertType, teamMembers[i], deviceEui, config.conditionOkMessage, createdAt);
+                saveSignal(-1 * config.alertLevel, config.id, config.organizationId, teamMembers[i], device.getEUI(),
+                        message, createdAt);
+                sendAlert(alertType, teamMembers[i], device.getEUI(), message, createdAt);
             }
         }
         if (config.administrators != null && !config.administrators.isEmpty()) {
@@ -421,20 +419,32 @@ public class DataEventLogic {
                 if (admins[i].isEmpty()) {
                     continue;
                 }
-                saveSignal(-1 * config.alertLevel, config.id, config.organizationId, admins[i], deviceEui,
-                        config.conditionOkMessage, createdAt);
-                sendAlert(alertType, admins[i], deviceEui, config.conditionOkMessage, createdAt);
+                saveSignal(-1 * config.alertLevel, config.id, config.organizationId, admins[i], device.getEUI(),
+                        message, createdAt);
+                sendAlert(alertType, admins[i], device.getEUI(), message, createdAt);
             }
         }
     }
 
-    private void saveEvent(SentinelConfig config, String deviceEui) {
+    private void saveEvent(SentinelConfig config, Device device) {
         logger.info("Saving event for sentinel: " + config.id);
+        DeviceGroup group = null;
+        if (config.groupEui != null && !config.groupEui.isEmpty()) {
+            try {
+                group = olapDao.getGroup(config.groupEui);
+            } catch (IotDatabaseException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+            }
+        }
+        String message = transformMessage(getMessageBody(config.alertMessage), config, device, group, "", 0.0);
+        String alertSubject = transformMessage(getMessageSubject(config.alertMessage), config, device, group, "", 0.0);
+        
         String alertType = getAlertType(config.alertLevel);
         long createdAt = System.currentTimeMillis();
         try {
-            sentinelDao.addSentinelEvent(config.id, deviceEui, config.alertLevel, config.alertMessage,
-                    config.alertMessage);
+            sentinelDao.addSentinelEvent(config.id, device.getEUI(), config.alertLevel, message,
+                    message);
         } catch (IotDatabaseException e) {
             // TODO Auto-generated catch block
             e.printStackTrace();
@@ -446,9 +456,9 @@ public class DataEventLogic {
                 if (teamMembers[i].isEmpty()) {
                     continue;
                 }
-                saveSignal(config.alertLevel, config.id, config.organizationId, teamMembers[i], deviceEui,
-                        config.alertMessage, createdAt);
-                sendAlert(alertType, teamMembers[i], deviceEui, config.alertMessage, createdAt);
+                saveSignal(config.alertLevel, config.id, config.organizationId, teamMembers[i], device.getEUI(),
+                        message, createdAt);
+                sendAlert(alertType, teamMembers[i], device.getEUI(), message, createdAt);
             }
         }
         if (config.administrators != null && !config.administrators.isEmpty()) {
@@ -457,9 +467,9 @@ public class DataEventLogic {
                 if (admins[i].isEmpty()) {
                     continue;
                 }
-                saveSignal(config.alertLevel, config.id, config.organizationId, admins[i], deviceEui,
-                        config.alertMessage, createdAt);
-                sendAlert(alertType, admins[i], deviceEui, config.alertMessage, createdAt);
+                saveSignal(config.alertLevel, config.id, config.organizationId, admins[i], device.getEUI(),
+                        message, createdAt);
+                sendAlert(alertType, admins[i], device.getEUI(), message, createdAt);
             }
         }
     }
@@ -509,6 +519,49 @@ public class DataEventLogic {
                 alertType = "ALERT";
         }
         return alertType;
+    }
+
+    private String getMessageSubject(String message) {
+        int idx = message.indexOf("{info}");
+        if (idx < 0) {
+            return "";
+        }
+        String subject = message.substring(0, idx);
+        return subject;
+    }
+
+    private String getMessageBody(String message) {
+        int idx = message.indexOf("{info}");
+        if (idx < 0) {
+            return message;
+        }
+        String body = message.substring(idx + 6);
+        return body;
+    }
+
+    private String transformMessage(String message, SentinelConfig config,
+            Device device, DeviceGroup group, String measurementName, Double measurementValue) {
+        String result = message;
+        String targetEui = "";
+        String targetName = "";
+        if (config.deviceEui != null && !config.deviceEui.isEmpty()) {
+            targetEui = config.deviceEui;
+            targetName = device.getName(); // in this case configured target is the same as the device that triggered
+                                           // the alert
+        }
+        if (config.groupEui != null && !config.groupEui.isEmpty()) {
+            targetEui = config.groupEui;
+            targetName = group.getName();
+        }
+        result = result.replaceAll("{target.eui}", targetEui);
+        result = result.replaceAll("{target.name}", targetName);
+        result.replaceAll("{tag.name}", config.tagName);
+        result.replaceAll("{tag.value}", config.tagValue);
+        result.replaceAll("{device.eui}", device.getEUI());
+        result.replaceAll("{device.name}", device.getName());
+        result.replaceAll("{var}", measurementName);
+        result.replaceAll("{value}", measurementValue.toString());
+        return result;
     }
 
 }
