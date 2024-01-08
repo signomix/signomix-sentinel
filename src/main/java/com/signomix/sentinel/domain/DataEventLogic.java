@@ -183,13 +183,8 @@ public class DataEventLogic {
         List<List<Object>> values;
         List<List<Object>> previousValues;
         logger.info("Checking sentinel related data for sentinel: " + config.id);
+        ConditionViolationResult result = new ConditionViolationResult();
         try {
-            /*
-             * logger.info("deviceChannelMap size: " + deviceChannelMap.size());
-             * deviceChannelMap.keySet().forEach((deviceEui) -> {
-             * logger.info("deviceEui: " + deviceEui);
-             * });
-             */
             values = sentinelDao.getLastValuesOfDevices(deviceChannelMap.keySet(), config.timeShift * 60);
             previousValues = new ArrayList<>();
             logger.info(config.id + " number of values: " + values.size());
@@ -197,7 +192,7 @@ public class DataEventLogic {
             for (List deviceParamsAndValues : values) {
                 String deviceEui = (String) deviceParamsAndValues.get(0);
                 // logger.info("VALUES FOR deviceEui: " + deviceEui);
-                boolean conditionsMet = runConfigQuery(config, deviceEui, deviceChannelMap, values, previousValues);
+                boolean conditionsMet = runConfigQuery(config, deviceEui, deviceChannelMap, values, previousValues).violated;
                 configConditionsMet = configConditionsMet || conditionsMet;
             }
             int status = sentinelDao.getSentinelStatus(config.id);
@@ -210,20 +205,21 @@ public class DataEventLogic {
                     if (device == null) {
                         device = oltpDao.getDevice(eui, false);
                     }
-                    saveResetEvent(config, device);
+                    saveResetEvent(config, device, result);
                 }
                 return;
             }
+            // conditions met
             logger.info("Conditions met for sentinel: " + config.id);
             if (device == null) {
                 device = oltpDao.getDevice(eui, false);
             }
             if (config.everyTime) {
-                saveEvent(config, device);
+                saveEvent(config, device, result);
             } else {
                 // check if the event was already saved
                 if (status <= 0) {
-                    saveEvent(config, device);
+                    saveEvent(config, device, result);
                 }
             }
         } catch (IotDatabaseException e) {
@@ -244,8 +240,11 @@ public class DataEventLogic {
      * @param values           the map of measurement values to use for the query
      * @return
      */
-    private boolean runConfigQuery(SentinelConfig config, String deviceEui, Map deviceChannelMap,
+    private ConditionViolationResult runConfigQuery(SentinelConfig config, String deviceEui, Map deviceChannelMap,
             List<List<Object>> values, List<List<Object>> previousValues) {
+                ConditionViolationResult result = new ConditionViolationResult();
+                result.violated = false;
+                result.value = null;
         try {
             // for debugging
             /*
@@ -288,7 +287,7 @@ public class DataEventLogic {
                     logger.info("condition:  " + condition.conditionOperator + " " + condition.measurement + ", "
                             + condition.condition1 + " " + condition.value1 + " " + condition.orOperator + " "
                             + condition.condition2 + " " + condition.value2);
-
+                    result.measurement = condition.measurement;
                     // as values holds all measurement values for all devices, we need to get only
                     // values for the selected measurement (condition.measurement) from all devices
                     ArrayList<Double> valuesList = new ArrayList<>();
@@ -369,15 +368,17 @@ public class DataEventLogic {
                     }
                 }
             }
-            return conditionsMet;
+            result.violated = conditionsMet;
+            return result;
         } catch (Exception e) {
             logger.error(e.getMessage());
             e.printStackTrace();
-            return false;
+            result.violated = false;
+            return result;
         }
     }
 
-    private void saveResetEvent(SentinelConfig config, Device device) {
+    private void saveResetEvent(SentinelConfig config, Device device, ConditionViolationResult violationResult) {
         DeviceGroup group = null;
         if (config.groupEui != null && !config.groupEui.isEmpty()) {
             try {
@@ -387,8 +388,8 @@ public class DataEventLogic {
                 e.printStackTrace();
             }
         }
-        String message = transformMessage(getMessageBody(config.conditionOkMessage), config, device, group, "", 0.0);
-        String alertSubject = transformMessage(getMessageSubject(config.conditionOkMessage), config, device, group, "", 0.0);
+        String message = transformMessage(getMessageBody(config.conditionOkMessage), config, device, group, violationResult);
+        String alertSubject = transformMessage(getMessageSubject(config.conditionOkMessage), config, device, group, violationResult);
         try {
             sentinelDao.addSentinelEvent(config.id, device.getEUI(), (-1 * config.alertLevel), message, message);
         } catch (IotDatabaseException e) {
@@ -409,8 +410,8 @@ public class DataEventLogic {
                     continue;
                 }
                 saveSignal(-1 * config.alertLevel, config.id, config.organizationId, teamMembers[i], device.getEUI(),
-                        message, createdAt);
-                sendAlert(alertType, teamMembers[i], device.getEUI(), message, createdAt);
+                        alertSubject, message, createdAt);
+                sendAlert(alertType, teamMembers[i], device.getEUI(), alertSubject, message, createdAt);
             }
         }
         if (config.administrators != null && !config.administrators.isEmpty()) {
@@ -420,13 +421,13 @@ public class DataEventLogic {
                     continue;
                 }
                 saveSignal(-1 * config.alertLevel, config.id, config.organizationId, admins[i], device.getEUI(),
-                        message, createdAt);
-                sendAlert(alertType, admins[i], device.getEUI(), message, createdAt);
+                        alertSubject, message, createdAt);
+                sendAlert(alertType, admins[i], device.getEUI(), alertSubject, message, createdAt);
             }
         }
     }
 
-    private void saveEvent(SentinelConfig config, Device device) {
+    private void saveEvent(SentinelConfig config, Device device, ConditionViolationResult violationResult) {
         logger.info("Saving event for sentinel: " + config.id);
         DeviceGroup group = null;
         if (config.groupEui != null && !config.groupEui.isEmpty()) {
@@ -437,9 +438,9 @@ public class DataEventLogic {
                 e.printStackTrace();
             }
         }
-        String message = transformMessage(getMessageBody(config.alertMessage), config, device, group, "", 0.0);
-        String alertSubject = transformMessage(getMessageSubject(config.alertMessage), config, device, group, "", 0.0);
-        
+        String message = transformMessage(getMessageBody(config.alertMessage), config, device, group, violationResult);
+        String alertSubject = transformMessage(getMessageSubject(config.alertMessage), config, device, group, violationResult);
+
         String alertType = getAlertType(config.alertLevel);
         long createdAt = System.currentTimeMillis();
         try {
@@ -457,8 +458,8 @@ public class DataEventLogic {
                     continue;
                 }
                 saveSignal(config.alertLevel, config.id, config.organizationId, teamMembers[i], device.getEUI(),
-                        message, createdAt);
-                sendAlert(alertType, teamMembers[i], device.getEUI(), message, createdAt);
+                        alertSubject, message, createdAt);
+                sendAlert(alertType, teamMembers[i], device.getEUI(), alertSubject, message, createdAt);
             }
         }
         if (config.administrators != null && !config.administrators.isEmpty()) {
@@ -468,27 +469,29 @@ public class DataEventLogic {
                     continue;
                 }
                 saveSignal(config.alertLevel, config.id, config.organizationId, admins[i], device.getEUI(),
-                        message, createdAt);
-                sendAlert(alertType, admins[i], device.getEUI(), message, createdAt);
+                        alertSubject, message, createdAt);
+                sendAlert(alertType, admins[i], device.getEUI(), alertSubject, message, createdAt);
             }
         }
     }
 
-    private void sendAlert(String alertType, String userId, String deviceEui, String alertMessage, long createdAt) {
+    private void sendAlert(String alertType, String userId, String deviceEui, String alertSubject, String alertMessage, long createdAt) {
         try {
             oltpDao.addAlert(alertType, deviceEui, userId, alertMessage, createdAt);
         } catch (IotDatabaseException e) {
             e.printStackTrace();
         }
-        alertEmitter.send(userId + "\t" + deviceEui + "\t" + alertType + "\t" + alertMessage);
+        alertEmitter.send(userId + "\t" + deviceEui + "\t" + alertType + "\t" + alertMessage+ "\t" + alertSubject);
     }
 
     private void saveSignal(int alertLevel, long configId, long organizationId, String userId, String deviceEui,
-            String alertMessage, long createdAt) {
+            String alertSubject, String alertMessage, long createdAt) {
         try {
             Signal signal = new Signal();
             signal.deviceEui = deviceEui;
             signal.level = alertLevel;
+            signal.subjectPl = alertSubject;
+            signal.subjectEn = alertSubject;
             signal.messageEn = alertMessage;
             signal.messagePl = alertMessage;
             signal.sentinelConfigId = configId;
@@ -540,7 +543,7 @@ public class DataEventLogic {
     }
 
     private String transformMessage(String message, SentinelConfig config,
-            Device device, DeviceGroup group, String measurementName, Double measurementValue) {
+            Device device, DeviceGroup group, ConditionViolationResult violationResult) {
         String result = message;
         String targetEui = "";
         String targetName = "";
@@ -559,8 +562,8 @@ public class DataEventLogic {
         result.replaceAll("{tag.value}", config.tagValue);
         result.replaceAll("{device.eui}", device.getEUI());
         result.replaceAll("{device.name}", device.getName());
-        result.replaceAll("{var}", measurementName);
-        result.replaceAll("{value}", measurementValue.toString());
+        result.replaceAll("{var}", violationResult.measurement);
+        result.replaceAll("{value}", "");
         return result;
     }
 
