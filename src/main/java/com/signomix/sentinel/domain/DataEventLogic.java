@@ -192,7 +192,8 @@ public class DataEventLogic {
             for (List deviceParamsAndValues : values) {
                 String deviceEui = (String) deviceParamsAndValues.get(0);
                 // logger.info("VALUES FOR deviceEui: " + deviceEui);
-                boolean conditionsMet = runConfigQuery(config, deviceEui, deviceChannelMap, values, previousValues).violated;
+                boolean conditionsMet = runConfigQuery(config, deviceEui, deviceChannelMap, values,
+                        previousValues).violated;
                 configConditionsMet = configConditionsMet || conditionsMet;
             }
             int status = sentinelDao.getSentinelStatus(config.id);
@@ -242,9 +243,9 @@ public class DataEventLogic {
      */
     private ConditionViolationResult runConfigQuery(SentinelConfig config, String deviceEui, Map deviceChannelMap,
             List<List<Object>> values, List<List<Object>> previousValues) {
-                ConditionViolationResult result = new ConditionViolationResult();
-                result.violated = false;
-                result.value = null;
+        ConditionViolationResult result = new ConditionViolationResult();
+        result.violated = false;
+        result.value = null;
         try {
             // for debugging
             /*
@@ -388,8 +389,10 @@ public class DataEventLogic {
                 e.printStackTrace();
             }
         }
-        String message = transformMessage(getMessageBody(config.conditionOkMessage), config, device, group, violationResult);
-        String alertSubject = transformMessage(getMessageSubject(config.conditionOkMessage), config, device, group, violationResult);
+        String message = transformMessage(getMessageBody(config.conditionOkMessage), config, device, group,
+                violationResult);
+        String alertSubject = transformMessage(getMessageSubject(config.conditionOkMessage), config, device, group,
+                violationResult);
         try {
             sentinelDao.addSentinelEvent(config.id, device.getEUI(), (-1 * config.alertLevel), message, message);
         } catch (IotDatabaseException e) {
@@ -439,7 +442,8 @@ public class DataEventLogic {
             }
         }
         String message = transformMessage(getMessageBody(config.alertMessage), config, device, group, violationResult);
-        String alertSubject = transformMessage(getMessageSubject(config.alertMessage), config, device, group, violationResult);
+        String alertSubject = transformMessage(getMessageSubject(config.alertMessage), config, device, group,
+                violationResult);
 
         String alertType = getAlertType(config.alertLevel);
         long createdAt = System.currentTimeMillis();
@@ -475,13 +479,14 @@ public class DataEventLogic {
         }
     }
 
-    private void sendAlert(String alertType, String userId, String deviceEui, String alertSubject, String alertMessage, long createdAt) {
+    private void sendAlert(String alertType, String userId, String deviceEui, String alertSubject, String alertMessage,
+            long createdAt) {
         try {
             oltpDao.addAlert(alertType, deviceEui, userId, alertMessage, createdAt);
         } catch (IotDatabaseException e) {
             e.printStackTrace();
         }
-        alertEmitter.send(userId + "\t" + deviceEui + "\t" + alertType + "\t" + alertMessage+ "\t" + alertSubject);
+        alertEmitter.send(userId + "\t" + deviceEui + "\t" + alertType + "\t" + alertMessage + "\t" + alertSubject);
     }
 
     private void saveSignal(int alertLevel, long configId, long organizationId, String userId, String deviceEui,
@@ -534,7 +539,7 @@ public class DataEventLogic {
     }
 
     private String getMessageBody(String message) {
-        int idx = message.indexOf("{info}");
+        int idx = message.indexOf("\\{info\\}");
         if (idx < 0) {
             return message;
         }
@@ -556,14 +561,14 @@ public class DataEventLogic {
             targetEui = config.groupEui;
             targetName = group.getName();
         }
-        result = result.replaceAll("{target.eui}", targetEui);
-        result = result.replaceAll("{target.name}", targetName);
-        result.replaceAll("{tag.name}", config.tagName);
-        result.replaceAll("{tag.value}", config.tagValue);
-        result.replaceAll("{device.eui}", device.getEUI());
-        result.replaceAll("{device.name}", device.getName());
-        result.replaceAll("{var}", violationResult.measurement);
-        result.replaceAll("{value}", "");
+        result = result.replaceAll("\\{target.eui\\}", targetEui);
+        result = result.replaceAll("\\{target.name\\}", targetName);
+        result = result.replaceAll("\\{tag.name\\}", config.tagName);
+        result = result.replaceAll("\\{tag.value\\}", config.tagValue);
+        result = result.replaceAll("\\{device.eui\\}", device.getEUI());
+        result = result.replaceAll("\\{device.name\\}", device.getName());
+        // result.replaceAll("\\{var\\}", violationResult.measurement);
+        result = result.replaceAll("\\{value\\}", "");
         return result;
     }
 
