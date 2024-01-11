@@ -192,9 +192,9 @@ public class DataEventLogic {
             for (List deviceParamsAndValues : values) {
                 String deviceEui = (String) deviceParamsAndValues.get(0);
                 // logger.info("VALUES FOR deviceEui: " + deviceEui);
-                boolean conditionsMet = runConfigQuery(config, deviceEui, deviceChannelMap, values,
-                        previousValues).violated;
-                configConditionsMet = configConditionsMet || conditionsMet;
+                result = runConfigQuery(config, deviceEui, deviceChannelMap, values,
+                        previousValues);
+                configConditionsMet = configConditionsMet || result.violated;
             }
             int status = sentinelDao.getSentinelStatus(config.id);
             Device device = null;
@@ -246,6 +246,7 @@ public class DataEventLogic {
         ConditionViolationResult result = new ConditionViolationResult();
         result.violated = false;
         result.value = null;
+        result.measurement = "";
         try {
             // for debugging
             /*
@@ -539,7 +540,7 @@ public class DataEventLogic {
     }
 
     private String getMessageBody(String message) {
-        int idx = message.indexOf("\\{info\\}");
+        int idx = message.indexOf("{info}");
         if (idx < 0) {
             return message;
         }
@@ -559,7 +560,9 @@ public class DataEventLogic {
         }
         if (config.groupEui != null && !config.groupEui.isEmpty()) {
             targetEui = config.groupEui;
-            targetName = group.getName();
+            if (group != null) {
+                targetName = group.getName();
+            }
         }
         result = result.replaceAll("\\{target.eui\\}", targetEui);
         result = result.replaceAll("\\{target.name\\}", targetName);
@@ -567,7 +570,7 @@ public class DataEventLogic {
         result = result.replaceAll("\\{tag.value\\}", config.tagValue);
         result = result.replaceAll("\\{device.eui\\}", device.getEUI());
         result = result.replaceAll("\\{device.name\\}", device.getName());
-        // result.replaceAll("\\{var\\}", violationResult.measurement);
+        result = result.replaceAll("\\{var\\}", violationResult.measurement);
         result = result.replaceAll("\\{value\\}", "");
         return result;
     }
