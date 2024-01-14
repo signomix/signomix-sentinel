@@ -1,6 +1,5 @@
 package com.signomix.sentinel.domain;
 
-import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -19,12 +18,12 @@ import com.signomix.common.db.SentinelDaoIface;
 import com.signomix.common.db.SignalDaoIface;
 import com.signomix.common.iot.Device;
 import com.signomix.common.iot.DeviceGroup;
+import com.signomix.common.iot.LastDataPair;
 import com.signomix.common.iot.sentinel.AlarmCondition;
 import com.signomix.common.iot.sentinel.SentinelConfig;
 import com.signomix.common.iot.sentinel.Signal;
 
 import io.agroal.api.AgroalDataSource;
-import io.opentelemetry.sdk.metrics.internal.debug.DebugConfig;
 import io.quarkus.agroal.DataSource;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -180,20 +179,16 @@ public class DataEventLogic {
     }
 
     private void checkSentinelRelatedData(SentinelConfig config, Map deviceChannelMap, String eui) {
-        List<List<Object>> values;
-        List<List<Object>> previousValues;
+        List<List<LastDataPair>> values;
         logger.info("Checking sentinel related data for sentinel: " + config.id);
         ConditionViolationResult result = new ConditionViolationResult();
         try {
             values = sentinelDao.getLastValuesOfDevices(deviceChannelMap.keySet(), config.timeShift * 60);
-            previousValues = new ArrayList<>();
             logger.info(config.id + " number of values: " + values.size());
             boolean configConditionsMet = false; // true if at least one device meets the conditions
             for (List deviceParamsAndValues : values) {
-                String deviceEui = (String) deviceParamsAndValues.get(0);
-                // logger.info("VALUES FOR deviceEui: " + deviceEui);
-                result = runConfigQuery(config, deviceEui, deviceChannelMap, values,
-                        previousValues);
+                String deviceEui = ((LastDataPair)deviceParamsAndValues.get(0)).eui;
+                result = runConfigQuery(config, deviceEui, deviceChannelMap, values);
                 configConditionsMet = configConditionsMet || result.violated;
             }
             int status = sentinelDao.getSentinelStatus(config.id);
@@ -242,7 +237,7 @@ public class DataEventLogic {
      * @return
      */
     private ConditionViolationResult runConfigQuery(SentinelConfig config, String deviceEui, Map deviceChannelMap,
-            List<List<Object>> values, List<List<Object>> previousValues) {
+            List<List<LastDataPair>> values) {
         ConditionViolationResult result = new ConditionViolationResult();
         result.violated = false;
         result.value = null;
@@ -265,7 +260,6 @@ public class DataEventLogic {
             logger.info("conditions: " + config.conditions.size());
             AlarmCondition condition;
             boolean conditionsMet = false;
-            Double value;
             List conditions = config.conditions;
             LinkedHashMap<String, Object> conditionMap = new LinkedHashMap();
             if (conditions != null) {
@@ -292,26 +286,20 @@ public class DataEventLogic {
                     result.measurement = condition.measurement;
                     // as values holds all measurement values for all devices, we need to get only
                     // values for the selected measurement (condition.measurement) from all devices
-                    ArrayList<Double> valuesList = new ArrayList<>();
+                    ArrayList<LastDataPair> valuesList = new ArrayList<>();
+
                     int measurementInex;
-                    Double val;
-                    Timestamp measurementTime; // time of the measurement is not used - only for debugging
+                    LastDataPair dataToCheck;
                     for (int j = 0; j < values.size(); j++) {
                         // get column index for measurement
+                        logger.info("getting channels map for deviceEui: " + deviceEui);
                         Map<String, String> measurementMap = (Map) deviceChannelMap.get(deviceEui);
                         String columnNumberStr = measurementMap.get(condition.measurement);
                         // logger.info("COLUMN NAME: "+columnNumberStr);
                         measurementInex = Integer.parseInt(columnNumberStr.substring(1));
-                        // logger.info("IDX: "+idx);
-                        // logger.info("VALUE: "+values.get(j).get(idx+1)+" expected:
-                        // "+condition.measurement);
-
-                        // measurementTime = (Timestamp) values.get(j).get(1); // time is always at
-                        // index 1
-                        val = (Double) values.get(j).get(measurementInex + 1);
-                        if (val != null) {
-                            valuesList.add(val);
-                        }
+                        measurementInex--; // column numbers start from 1 (name d1), but list indexes start from 0
+                        dataToCheck = (LastDataPair) values.get(j).get(measurementInex);
+                        valuesList.add(dataToCheck);
                     }
                     String valuesListStr = condition.measurement
                             + (condition.condition1 == 1 ? " > " : " < " + condition.value1);
@@ -328,31 +316,36 @@ public class DataEventLogic {
                         logger.info(i + " values for " + condition.measurement + " not found");
                         continue;
                     }
-                    // Double tmpValue;
+                    // Double tmpValue
+                    
                     if (condition.condition1 == AlarmCondition.CONDITION_GREATER) {
                         for (int j = 0; j < valuesList.size(); j++) {
+                            logger.info("VALUE: " + valuesList.get(j).value);
                             actualConditionMet = actualConditionMet
-                                    || (valuesList.get(j).compareTo(condition.value1) > 0);
+                                    || (valuesList.get(j).value.compareTo(condition.value1) > 0);
                         }
                         // ok = value.compareTo(condition.value1) > 0;
                     } else if (condition.condition1 == AlarmCondition.CONDITION_LESS) {
                         for (int j = 0; j < valuesList.size(); j++) {
+                            logger.info("VALUE: " + valuesList.get(j).value);
                             actualConditionMet = actualConditionMet
-                                    || (valuesList.get(j).compareTo(condition.value1) < 0);
+                                    || (valuesList.get(j).value.compareTo(condition.value1) < 0);
                         }
                         // ok = value.compareTo(condition.value1) < 0;
                     }
                     if (condition.orOperator && condition.value2 != null) {
                         if (condition.condition2 == AlarmCondition.CONDITION_GREATER) {
                             for (int j = 0; j < valuesList.size(); j++) {
+                                logger.info("VALUE: " + valuesList.get(j).value);
                                 actualConditionMet = actualConditionMet
-                                        || (valuesList.get(j).compareTo(condition.value2) > 0);
+                                        || (valuesList.get(j).value.compareTo(condition.value2) > 0);
                             }
                             // ok = ok || value.compareTo(condition.value2) > 0;
                         } else if (condition.condition2 == AlarmCondition.CONDITION_LESS) {
                             for (int j = 0; j < valuesList.size(); j++) {
+                                logger.info("VALUE: " + valuesList.get(j).value);
                                 actualConditionMet = actualConditionMet
-                                        || (valuesList.get(j).compareTo(condition.value2) < 0);
+                                        || (valuesList.get(j).value.compareTo(condition.value2) < 0);
                             }
                             // ok = ok || value.compareTo(condition.value2) < 0;
                         }
