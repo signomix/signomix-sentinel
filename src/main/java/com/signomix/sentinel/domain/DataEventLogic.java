@@ -187,7 +187,7 @@ public class DataEventLogic {
             logger.info(config.id + " number of values: " + values.size());
             boolean configConditionsMet = false; // true if at least one device meets the conditions
             for (List deviceParamsAndValues : values) {
-                String deviceEui = ((LastDataPair)deviceParamsAndValues.get(0)).eui;
+                String deviceEui = ((LastDataPair) deviceParamsAndValues.get(0)).eui;
                 result = runConfigQuery(config, deviceEui, deviceChannelMap, values);
                 configConditionsMet = configConditionsMet || result.violated;
             }
@@ -317,38 +317,70 @@ public class DataEventLogic {
                         continue;
                     }
                     // Double tmpValue
-                    
+                    Double hysteresis = Math.abs(config.hysteresis);
+                    Double valueToCheck;
+                    Double diff;
                     if (condition.condition1 == AlarmCondition.CONDITION_GREATER) {
                         for (int j = 0; j < valuesList.size(); j++) {
-                            logger.info("VALUE: " + valuesList.get(j).value);
-                            actualConditionMet = actualConditionMet
-                                    || (valuesList.get(j).value.compareTo(condition.value1) > 0);
+                            valueToCheck = valuesList.get(j).value;
+                            diff = valuesList.get(j).delta;
+                            logger.info("VALUE: " + valueToCheck);
+                            if (diff >= 0) {
+                                actualConditionMet = actualConditionMet
+                                        || (valueToCheck.compareTo(condition.value1) > 0);
+                            } else {
+                                actualConditionMet = actualConditionMet
+                                        || (valueToCheck.compareTo(condition.value1 - hysteresis) >= 0);
+                            }
                         }
                         // ok = value.compareTo(condition.value1) > 0;
                     } else if (condition.condition1 == AlarmCondition.CONDITION_LESS) {
                         for (int j = 0; j < valuesList.size(); j++) {
-                            logger.info("VALUE: " + valuesList.get(j).value);
-                            actualConditionMet = actualConditionMet
-                                    || (valuesList.get(j).value.compareTo(condition.value1) < 0);
+                            valueToCheck = valuesList.get(j).value;
+                            diff = valuesList.get(j).delta;
+                            logger.info("VALUE: " + valueToCheck);
+                            if (diff <= 0) {
+                                actualConditionMet = actualConditionMet
+                                        || (valueToCheck.compareTo(condition.value1) < 0);
+                            } else {
+                                actualConditionMet = actualConditionMet
+                                        || (valueToCheck.compareTo(condition.value1 + hysteresis) <= 0);
+                            }
                         }
                         // ok = value.compareTo(condition.value1) < 0;
                     }
                     if (condition.orOperator && condition.value2 != null) {
                         if (condition.condition2 == AlarmCondition.CONDITION_GREATER) {
                             for (int j = 0; j < valuesList.size(); j++) {
-                                logger.info("VALUE: " + valuesList.get(j).value);
-                                actualConditionMet = actualConditionMet
-                                        || (valuesList.get(j).value.compareTo(condition.value2) > 0);
+                                valueToCheck = valuesList.get(j).value;
+                                diff = valuesList.get(j).delta;
+                                logger.info("VALUE: " + valueToCheck);
+                                if (diff >= 0) {
+                                    actualConditionMet = actualConditionMet
+                                            || (valueToCheck.compareTo(condition.value2) > 0);
+                                } else {
+                                    actualConditionMet = actualConditionMet
+                                            || (valueToCheck.compareTo(condition.value2 - hysteresis) >= 0);
+                                }
                             }
                             // ok = ok || value.compareTo(condition.value2) > 0;
                         } else if (condition.condition2 == AlarmCondition.CONDITION_LESS) {
                             for (int j = 0; j < valuesList.size(); j++) {
-                                logger.info("VALUE: " + valuesList.get(j).value);
-                                actualConditionMet = actualConditionMet
-                                        || (valuesList.get(j).value.compareTo(condition.value2) < 0);
+                                valueToCheck = valuesList.get(j).value;
+                                diff = valuesList.get(j).delta;
+                                logger.info("VALUE: " + valueToCheck);
+                                if (diff <= 0) {
+                                    actualConditionMet = actualConditionMet
+                                            || (valueToCheck.compareTo(condition.value1) < 0);
+                                } else {
+                                    actualConditionMet = actualConditionMet
+                                            || (valueToCheck.compareTo(condition.value1 + hysteresis) <= 0);
+                                }
                             }
                             // ok = ok || value.compareTo(condition.value2) < 0;
                         }
+                    } else if( (!condition.orOperator) && condition.value2 == null) {
+                        // TODO
                     }
                     if (i == 0) {
                         conditionsMet = actualConditionMet;
