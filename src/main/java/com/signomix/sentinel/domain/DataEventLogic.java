@@ -278,7 +278,8 @@ public class DataEventLogic {
                     condition.value1 = (Double) conditionMap.get("value1");
                     condition.condition2 = (Integer) conditionMap.get("condition2");
                     condition.value2 = (Double) conditionMap.get("value2");
-                    condition.orOperator = (Boolean) conditionMap.get("orOperator");
+                    condition.orOperator = (Boolean) conditionMap.get("orOperator"); // deprecated
+                    condition.logic = (Integer) conditionMap.get("logic");
                     condition.conditionOperator = (Integer) conditionMap.get("conditionOperator");
                     logger.info("condition:  " + condition.conditionOperator + " " + condition.measurement + ", "
                             + condition.condition1 + " " + condition.value1 + " " + condition.orOperator + " "
@@ -304,11 +305,11 @@ public class DataEventLogic {
                     String valuesListStr = condition.measurement
                             + (condition.condition1 == 1 ? " > " : " < " + condition.value1);
                     String valuesListStr2 = "";
-                    if (condition.value2 != null) {
-                        valuesListStr2 = (condition.orOperator ? " or " : "")
+                    if (condition.value2 != null && condition.logic != null && condition.logic >0) {
+                        valuesListStr2 = (condition.logic==1 ? " or " : " and")
                                 + (condition.condition2 == 1 ? " > " : " < " + condition.value2);
                     }
-                    if (condition.orOperator) {
+                    if (condition.logic>0) {
                         valuesListStr += valuesListStr2;
                     }
                     logger.info("Condition to check: " + valuesListStr);
@@ -349,18 +350,28 @@ public class DataEventLogic {
                         }
                         // ok = value.compareTo(condition.value1) < 0;
                     }
-                    if (condition.orOperator && condition.value2 != null) {
+                    if (condition.logic!=null && condition.logic>0 && condition.value2 != null) {
                         if (condition.condition2 == AlarmCondition.CONDITION_GREATER) {
                             for (int j = 0; j < valuesList.size(); j++) {
                                 valueToCheck = valuesList.get(j).value;
                                 diff = valuesList.get(j).delta;
                                 logger.info("VALUE: " + valueToCheck);
                                 if (diff >= 0) {
-                                    actualConditionMet = actualConditionMet
-                                            || (valueToCheck.compareTo(condition.value2) > 0);
+                                    if(condition.logic==1){
+                                        actualConditionMet = actualConditionMet
+                                                || (valueToCheck.compareTo(condition.value2) > 0);
+                                    } else {
+                                        actualConditionMet = actualConditionMet
+                                                && (valueToCheck.compareTo(condition.value2) > 0);
+                                    }
                                 } else {
-                                    actualConditionMet = actualConditionMet
-                                            || (valueToCheck.compareTo(condition.value2 - hysteresis) >= 0);
+                                    if(condition.logic==1){
+                                        actualConditionMet = actualConditionMet
+                                                || (valueToCheck.compareTo(condition.value2 - hysteresis) >= 0);
+                                    } else {
+                                        actualConditionMet = actualConditionMet
+                                                && (valueToCheck.compareTo(condition.value2 - hysteresis) >= 0);
+                                    }
                                 }
                             }
                             // ok = ok || value.compareTo(condition.value2) > 0;
@@ -370,17 +381,25 @@ public class DataEventLogic {
                                 diff = valuesList.get(j).delta;
                                 logger.info("VALUE: " + valueToCheck);
                                 if (diff <= 0) {
-                                    actualConditionMet = actualConditionMet
-                                            || (valueToCheck.compareTo(condition.value1) < 0);
+                                    if(condition.logic==1){
+                                        actualConditionMet = actualConditionMet
+                                                || (valueToCheck.compareTo(condition.value2) < 0);
+                                    } else {
+                                        actualConditionMet = actualConditionMet
+                                                && (valueToCheck.compareTo(condition.value2) < 0);
+                                    }
                                 } else {
-                                    actualConditionMet = actualConditionMet
-                                            || (valueToCheck.compareTo(condition.value1 + hysteresis) <= 0);
+                                    if(condition.logic==1){
+                                        actualConditionMet = actualConditionMet
+                                                || (valueToCheck.compareTo(condition.value2 + hysteresis) <= 0);
+                                    } else {
+                                        actualConditionMet = actualConditionMet
+                                                && (valueToCheck.compareTo(condition.value2 + hysteresis) <= 0);
+                                    }
                                 }
                             }
                             // ok = ok || value.compareTo(condition.value2) < 0;
                         }
-                    } else if( (!condition.orOperator) && condition.value2 == null) {
-                        // TODO
                     }
                     if (i == 0) {
                         conditionsMet = actualConditionMet;
