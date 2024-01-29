@@ -293,10 +293,12 @@ public class DataEventLogic {
                     LastDataPair dataToCheck;
                     for (int j = 0; j < values.size(); j++) {
                         // get column index for measurement
-                        logger.info("getting channels map for deviceEui: " + deviceEui);
                         Map<String, String> measurementMap = (Map) deviceChannelMap.get(deviceEui);
                         String columnNumberStr = measurementMap.get(condition.measurement);
-                        // logger.info("COLUMN NAME: "+columnNumberStr);
+                        if(columnNumberStr==null || columnNumberStr.isEmpty()){
+                            logger.info("columnNumberStr is null or empty for measurement: "+condition.measurement);
+                            continue;
+                        }
                         measurementInex = Integer.parseInt(columnNumberStr.substring(1));
                         measurementInex--; // column numbers start from 1 (name d1), but list indexes start from 0
                         dataToCheck = (LastDataPair) values.get(j).get(measurementInex);
@@ -451,8 +453,9 @@ public class DataEventLogic {
         long createdAt = System.currentTimeMillis();
         String alertType = getAlertType(config.alertLevel);
         // alert won't be sent to its creator (owner) - only to team members and admins
-        if (config.team != null && !config.team.isEmpty()) {
-            String[] teamMembers = config.team.split(",");
+        String team=transformTeam(config.team,device);
+        if (!team.isEmpty()) {
+            String[] teamMembers = team.split(",");
             for (int i = 0; i < teamMembers.length; i++) {
                 if (teamMembers[i].isEmpty()) {
                     continue;
@@ -500,8 +503,9 @@ public class DataEventLogic {
             e.printStackTrace();
         }
         // alert won't be sent to its creator (owner) - only to team members and admins
-        if (config.team != null && !config.team.isEmpty()) {
-            String[] teamMembers = config.team.split(",");
+        String team=transformTeam(config.team,device);
+        if (!team.isEmpty()) {
+            String[] teamMembers = team.split(",");
             for (int i = 0; i < teamMembers.length; i++) {
                 if (teamMembers[i].isEmpty()) {
                     continue;
@@ -616,6 +620,33 @@ public class DataEventLogic {
         result = result.replaceAll("\\{device.name\\}", device.getName());
         result = result.replaceAll("\\{var\\}", violationResult.measurement);
         result = result.replaceAll("\\{value\\}", "");
+        return result;
+    }
+
+    /**
+     * Transforms the team variables {device.team}, {devic.admins}, {device.owner} to a list of user IDs.
+     * @param team
+     * @param device
+     * @return
+     */
+    private String transformTeam(String team, Device device) {
+        if (team == null || team.isEmpty()) {
+            return "";
+        }
+        String result=team;
+        String deviceTeam=device.getTeam();
+        String deviceAdmins=device.getAdministrators();
+        String deviceOwner=device.getUserID();
+        if (deviceTeam!=null && !deviceTeam.isEmpty()) {
+            result=result.replace("{device.team}", deviceTeam.trim());
+        }
+        if (deviceAdmins!=null && !deviceAdmins.isEmpty()) {
+            result=result.replace("{device.admins}", deviceAdmins.trim());
+        }
+        if (deviceOwner!=null && !deviceOwner.isEmpty()) {
+            result=result.replace("{device.owner}", deviceOwner.trim());
+        }
+
         return result;
     }
 
