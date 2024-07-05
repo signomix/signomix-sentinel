@@ -71,16 +71,20 @@
     <dependency>
       <groupId>com.signomix</groupId>
       <artifactId>signomix-common</artifactId>
-      <version>1.10.7</version>
+      <version>1.13.3</version>
     </dependency>
     <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-logging-gelf</artifactId>
+    </dependency>
+<!--     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-opentelemetry</artifactId>
     </dependency>
     <dependency>
       <groupId>io.opentelemetry.instrumentation</groupId>
       <artifactId>opentelemetry-jdbc</artifactId>
-    </dependency>
+    </dependency> -->
   </dependencies>
   <build>
     <plugins>
