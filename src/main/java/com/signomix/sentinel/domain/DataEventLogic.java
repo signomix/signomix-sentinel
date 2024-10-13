@@ -1,16 +1,5 @@
 package com.signomix.sentinel.domain;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-
-import org.eclipse.microprofile.reactive.messaging.Channel;
-import org.eclipse.microprofile.reactive.messaging.Emitter;
-import org.jboss.logging.Logger;
-
 import com.signomix.common.Tag;
 import com.signomix.common.db.IotDatabaseException;
 import com.signomix.common.db.IotDatabaseIface;
@@ -22,13 +11,22 @@ import com.signomix.common.iot.LastDataPair;
 import com.signomix.common.iot.sentinel.AlarmCondition;
 import com.signomix.common.iot.sentinel.SentinelConfig;
 import com.signomix.common.iot.sentinel.Signal;
-
 import io.agroal.api.AgroalDataSource;
 import io.quarkus.agroal.DataSource;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.eclipse.microprofile.reactive.messaging.Channel;
+import org.eclipse.microprofile.reactive.messaging.Emitter;
+import org.jboss.logging.Logger;
 
 @ApplicationScoped
 public class DataEventLogic {
@@ -55,6 +53,9 @@ public class DataEventLogic {
     @Inject
     @Channel("alerts")
     Emitter<String> alertEmitter;
+
+    @ConfigProperty(name = "signomix.signals.used", defaultValue = "false")
+    Boolean signalsUsed;
 
     void onStart(@Observes StartupEvent ev) {
         sentinelDao = new com.signomix.common.tsdb.SentinelDao();
@@ -295,8 +296,8 @@ public class DataEventLogic {
                         // get column index for measurement
                         Map<String, String> measurementMap = (Map) deviceChannelMap.get(deviceEui);
                         String columnNumberStr = measurementMap.get(condition.measurement);
-                        if(columnNumberStr==null || columnNumberStr.isEmpty()){
-                            logger.info("columnNumberStr is null or empty for measurement: "+condition.measurement);
+                        if (columnNumberStr == null || columnNumberStr.isEmpty()) {
+                            logger.info("columnNumberStr is null or empty for measurement: " + condition.measurement);
                             continue;
                         }
                         measurementInex = Integer.parseInt(columnNumberStr.substring(1));
@@ -307,11 +308,11 @@ public class DataEventLogic {
                     String valuesListStr = condition.measurement
                             + (condition.condition1 == 1 ? " > " : " < " + condition.value1);
                     String valuesListStr2 = "";
-                    if (condition.value2 != null && condition.logic != null && condition.logic >0) {
-                        valuesListStr2 = (condition.logic==1 ? " or " : " and")
+                    if (condition.value2 != null && condition.logic != null && condition.logic > 0) {
+                        valuesListStr2 = (condition.logic == 1 ? " or " : " and")
                                 + (condition.condition2 == 1 ? " > " : " < " + condition.value2);
                     }
-                    if (condition.logic>0) {
+                    if (condition.logic > 0) {
                         valuesListStr += valuesListStr2;
                     }
                     logger.info("Condition to check: " + valuesListStr);
@@ -352,14 +353,14 @@ public class DataEventLogic {
                         }
                         // ok = value.compareTo(condition.value1) < 0;
                     }
-                    if (condition.logic!=null && condition.logic>0 && condition.value2 != null) {
+                    if (condition.logic != null && condition.logic > 0 && condition.value2 != null) {
                         if (condition.condition2 == AlarmCondition.CONDITION_GREATER) {
                             for (int j = 0; j < valuesList.size(); j++) {
                                 valueToCheck = valuesList.get(j).value;
                                 diff = valuesList.get(j).delta;
                                 logger.info("VALUE: " + valueToCheck);
                                 if (diff >= 0) {
-                                    if(condition.logic==1){
+                                    if (condition.logic == 1) {
                                         actualConditionMet = actualConditionMet
                                                 || (valueToCheck.compareTo(condition.value2) > 0);
                                     } else {
@@ -367,7 +368,7 @@ public class DataEventLogic {
                                                 && (valueToCheck.compareTo(condition.value2) > 0);
                                     }
                                 } else {
-                                    if(condition.logic==1){
+                                    if (condition.logic == 1) {
                                         actualConditionMet = actualConditionMet
                                                 || (valueToCheck.compareTo(condition.value2 - hysteresis) >= 0);
                                     } else {
@@ -383,7 +384,7 @@ public class DataEventLogic {
                                 diff = valuesList.get(j).delta;
                                 logger.info("VALUE: " + valueToCheck);
                                 if (diff <= 0) {
-                                    if(condition.logic==1){
+                                    if (condition.logic == 1) {
                                         actualConditionMet = actualConditionMet
                                                 || (valueToCheck.compareTo(condition.value2) < 0);
                                     } else {
@@ -391,7 +392,7 @@ public class DataEventLogic {
                                                 && (valueToCheck.compareTo(condition.value2) < 0);
                                     }
                                 } else {
-                                    if(condition.logic==1){
+                                    if (condition.logic == 1) {
                                         actualConditionMet = actualConditionMet
                                                 || (valueToCheck.compareTo(condition.value2 + hysteresis) <= 0);
                                     } else {
@@ -453,7 +454,7 @@ public class DataEventLogic {
         long createdAt = System.currentTimeMillis();
         String alertType = getAlertType(config.alertLevel);
         // alert won't be sent to its creator (owner) - only to team members and admins
-        String team=transformTeam(config.team,device);
+        String team = transformTeam(config.team, device);
         if (!team.isEmpty()) {
             String[] teamMembers = team.split(",");
             for (int i = 0; i < teamMembers.length; i++) {
@@ -503,7 +504,7 @@ public class DataEventLogic {
             e.printStackTrace();
         }
         // alert won't be sent to its creator (owner) - only to team members and admins
-        String team=transformTeam(config.team,device);
+        String team = transformTeam(config.team, device);
         if (!team.isEmpty()) {
             String[] teamMembers = team.split(",");
             for (int i = 0; i < teamMembers.length; i++) {
@@ -530,10 +531,12 @@ public class DataEventLogic {
 
     private void sendAlert(String alertType, String userId, String deviceEui, String alertSubject, String alertMessage,
             long createdAt) {
-        try {
-            oltpDao.addAlert(alertType, deviceEui, userId, alertMessage, createdAt);
-        } catch (IotDatabaseException e) {
-            e.printStackTrace();
+        if (!signalsUsed) {
+            try {
+                oltpDao.addAlert(alertType, deviceEui, userId, alertMessage, createdAt);
+            } catch (IotDatabaseException e) {
+                e.printStackTrace();
+            }
         }
         alertEmitter.send(userId + "\t" + deviceEui + "\t" + alertType + "\t" + alertMessage + "\t" + alertSubject);
     }
@@ -624,7 +627,9 @@ public class DataEventLogic {
     }
 
     /**
-     * Transforms the team variables {device.team}, {devic.admins}, {device.owner} to a list of user IDs.
+     * Transforms the team variables {device.team}, {devic.admins}, {device.owner}
+     * to a list of user IDs.
+     * 
      * @param team
      * @param device
      * @return
@@ -633,18 +638,18 @@ public class DataEventLogic {
         if (team == null || team.isEmpty()) {
             return "";
         }
-        String result=team;
-        String deviceTeam=device.getTeam();
-        String deviceAdmins=device.getAdministrators();
-        String deviceOwner=device.getUserID();
-        if (deviceTeam!=null && !deviceTeam.isEmpty()) {
-            result=result.replace("{device.team}", deviceTeam.trim());
+        String result = team;
+        String deviceTeam = device.getTeam();
+        String deviceAdmins = device.getAdministrators();
+        String deviceOwner = device.getUserID();
+        if (deviceTeam != null && !deviceTeam.isEmpty()) {
+            result = result.replace("{device.team}", deviceTeam.trim());
         }
-        if (deviceAdmins!=null && !deviceAdmins.isEmpty()) {
-            result=result.replace("{device.admins}", deviceAdmins.trim());
+        if (deviceAdmins != null && !deviceAdmins.isEmpty()) {
+            result = result.replace("{device.admins}", deviceAdmins.trim());
         }
-        if (deviceOwner!=null && !deviceOwner.isEmpty()) {
-            result=result.replace("{device.owner}", deviceOwner.trim());
+        if (deviceOwner != null && !deviceOwner.isEmpty()) {
+            result = result.replace("{device.owner}", deviceOwner.trim());
         }
 
         return result;
