@@ -34,4 +34,8 @@ public class SignalPort {
     public void deleteSignal(User user, long id) {
         signalLogic.deleteSignal(user, id);
     }
+
+    public void deleteSignals(User user) {
+        signalLogic.deleteSignals(user);
+    }
 }

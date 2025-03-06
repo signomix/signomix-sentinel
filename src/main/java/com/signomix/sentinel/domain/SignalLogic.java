@@ -76,4 +76,12 @@ public class SignalLogic {
             e.printStackTrace();
         }
     }
+
+    public void deleteSignals(User user){
+        try {
+            signalDao.deleteSignals(user.uid);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
 }

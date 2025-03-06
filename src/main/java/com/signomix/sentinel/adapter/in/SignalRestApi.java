@@ -65,7 +65,11 @@ public class SignalRestApi {
     @Path("/{id}")
     public Response deleteSignal(@HeaderParam("Authentication") String token, @PathParam("id") long id) {
         User user = authPort.getUser(token);
-        signalPort.deleteSignal(user, id);
+        if(id==-1){
+            signalPort.deleteSignals(user);
+        }else{
+            signalPort.deleteSignal(user, id);
+        }
         return Response.ok().entity("OK").build();
     }
 
