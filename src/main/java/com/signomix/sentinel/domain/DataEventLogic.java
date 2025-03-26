@@ -91,7 +91,7 @@ public class DataEventLogic {
     public void handleDataReceivedEvent(String deviceEui) {
         // logger.info("Handling data received event: " + deviceEui);
         // testJsInterpreter(deviceEui);
-        //testPythonInterpreter(deviceEui);
+        // testPythonInterpreter(deviceEui);
         String tag = "";
         String tagValue = "";
         String[] groups = new String[0];
@@ -254,20 +254,17 @@ public class DataEventLogic {
      */
     private ConditionViolationResult runConfigQuery(SentinelConfig config, String deviceEui, Map deviceChannelMap,
             List<List<LastDataPair>> values) {
-        if (config.script != null && !config.script.isEmpty() && config.scriptLanguage != null) {
-            logger.info("Running script : " + config.script);
-            switch (config.scriptLanguage.toLowerCase()) {
-                case "python":
-                    return runPythonScript(config, deviceEui, deviceChannelMap, values);
-                default:
-                    return runPythonScript(config, deviceEui, deviceChannelMap, values);
-            }
-        }
-        runPythonScript(config, deviceEui, deviceChannelMap, values);
+
         ConditionViolationResult result = new ConditionViolationResult();
         result.violated = false;
         result.value = null;
         result.measurement = "";
+
+        if (config.useScript && config.script != null && !config.script.isEmpty()) {
+            logger.info("Running script : " + config.script);
+            return runPythonScript(config, deviceEui, deviceChannelMap, values);
+        }
+
         try {
             // for debugging
             /*
@@ -565,6 +562,7 @@ public class DataEventLogic {
                         valuesArr = values
                         global channelMap
                         channelMap = deviceChannelMap
+                        result = ""
 
                         # Access the Java object's methods
                         #message = java_obj.getMessage()
@@ -574,35 +572,53 @@ public class DataEventLogic {
                         #result = values[0][0].value
                         #get_measurementIndex("IOTEMULATOR", "temperature", deviceChannelMap)
                         #result = get_value("IOTEMULATOR", "temperature", values, deviceChannelMap)
-                        
+
                         #result = getValue("temperature")
-                        result = checkRule()
+                        try:
+                            result = checkRule()
+                        except:
+                            print("Script error")
+                            result = ""
                         return result
 
-                    def checkRule():
-                        result = False
-                        v1 = getValue("temperature")
-                        v2 = getValue("humidity")
-                        if v1 is None or v2 is None:
-                            return False
+                    def buildResponse(measurement, value):
+                        return config.deviceEui + ";" + measurement + ";" + str(value)
 
-                        if v2 - v1 > 10:
-                            result = True
-                        return result
+                    #def checkRule():
+                    #    result = False
+                    #    v1 = getValue("temperature")
+                    #    v2 = getValue("humidity")
+                    #    if v1 is None or v2 is None:
+                    #        return False
+                    #    if v2 - v1 > 10:
+                    #        result = True
+                    #    return result
+
                     """;
+            script = script + config.script;
             PythonInterpreter interpreter = new PythonInterpreter();
             interpreter.set("config_obj", config);
             interpreter.set("values", values);
             interpreter.set("deviceChannelMap", deviceChannelMap);
             // Execute the Jython script
+            logger.info("\n"+script);
             interpreter.exec(script);
             // Call the Python function and get the result
             PyObject pResult = interpreter.eval("process_java_object(config_obj,values,deviceChannelMap)");
             interpreter.close();
             logger.info("pResult: " + pResult.toString());
             logger.info("pResult type: " + pResult.getType());
-            logger.info("pResult asInt: " + pResult.asInt());
+            //logger.info("pResult asInt: " + pResult.asInt());
             //result.violated = pResult.asInt() > 0;
+            String scriptResult= pResult.toString();
+            result.violated = scriptResult.length() > 0;
+            if(result.violated){
+                logger.info("Script result: " + scriptResult);
+                String[] scriptResultArr = scriptResult.split(";");
+                result.eui = scriptResultArr[0];
+                result.measurement = scriptResultArr[1];
+                result.value = Double.parseDouble(scriptResultArr[2]);
+            }
             long endTime = System.currentTimeMillis();
             logger.info("Python script execution time: " + (endTime - startTime) + " ms");
         } catch (Exception e) {

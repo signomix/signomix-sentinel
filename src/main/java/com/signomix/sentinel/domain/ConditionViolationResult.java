@@ -4,4 +4,5 @@ public class ConditionViolationResult {
     public String measurement;
     public Double value;
     public boolean violated;
+    public String eui;
 }
