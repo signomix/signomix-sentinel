@@ -6,10 +6,10 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.signomix</groupId>
   <artifactId>signomix-sentinel</artifactId>
-  <version>1.5.0</version>
+  <version>1.0.0</version>
   <properties>
     <compiler-plugin.version>3.11.0</compiler-plugin.version>
-    <maven.compiler.release>17</maven.compiler.release>
+    <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
@@ -17,6 +17,8 @@
     <quarkus.platform.version>3.5.3</quarkus.platform.version>
     <skipITs>true</skipITs>
     <surefire-plugin.version>3.1.2</surefire-plugin.version>
+    <!-- Select the GraalVM version to use. -->
+    <graalvm.version>22.2.0</graalvm.version>
   </properties>
   <dependencyManagement>
     <dependencies>
@@ -71,13 +73,13 @@
     <dependency>
       <groupId>com.signomix</groupId>
       <artifactId>signomix-common</artifactId>
-      <version>1.22.0</version>
+      <version>1.26.0</version>
     </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-logging-gelf</artifactId>
     </dependency>
-<!--     <dependency>
+    <!--     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-opentelemetry</artifactId>
     </dependency>
@@ -85,6 +87,29 @@
       <groupId>io.opentelemetry.instrumentation</groupId>
       <artifactId>opentelemetry-jdbc</artifactId>
     </dependency> -->
+
+    <dependency>
+      <groupId>org.graalvm.sdk</groupId>
+      <artifactId>graal-sdk</artifactId>
+      <version>${graalvm.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.graalvm.js</groupId>
+      <artifactId>js</artifactId>
+      <version>${graalvm.version}</version>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.graalvm.js</groupId>
+      <artifactId>js-scriptengine</artifactId>
+      <version>${graalvm.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.python</groupId>
+      <artifactId>jython-standalone</artifactId>
+      <version>2.7.2</version>
+    </dependency>
   </dependencies>
   <build>
     <plugins>

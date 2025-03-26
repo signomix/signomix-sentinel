@@ -26,5 +26,10 @@ public class DeviceEventPort {
         String deviceEui=new String(eui);
         deviceEventLogic.handleDeviceUpdatedEvent(deviceEui);
     }
+
+    public void deviceControl(byte[] groupEui) {
+        String groupEuiStr=new String(groupEui);
+        deviceEventLogic.handleDeviceControlEvent(groupEuiStr);
+    }
     
 }

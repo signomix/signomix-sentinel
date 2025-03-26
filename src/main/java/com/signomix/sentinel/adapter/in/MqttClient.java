@@ -47,4 +47,10 @@ public class MqttClient {
         deviceEventPort.deviceUpdated(eui);
     }
 
+    /* @Incoming("device-control")
+    public void deviceControl(byte[] groupEui) {
+        logger.info("Device control: " + groupEui);
+        deviceEventPort.deviceControl(groupEui);
+    } */
+
 }

@@ -3,10 +3,13 @@ package com.signomix.sentinel.domain;
 import java.util.List;
 
 import org.jboss.logging.Logger;
+import org.python.core.PyObject;
+import org.python.util.PythonInterpreter;
 
 import com.signomix.common.User;
 import com.signomix.common.db.IotDatabaseException;
 import com.signomix.common.db.IotDatabaseIface;
+import com.signomix.common.db.ReportResult;
 import com.signomix.common.db.SentinelDaoIface;
 import com.signomix.common.db.UserDaoIface;
 import com.signomix.common.iot.Device;
@@ -104,4 +107,39 @@ public class DeviceEventLogic {
         handleDeviceCreatedEvent(deviceEui);
     }
 
+    public void handleDeviceControlEvent(String groupEui) {
+        System.out.println("Handling control event: " + groupEui);
+        try {
+            //List<List<List>> result = olapDao.getGroupLastValues(groupEui, 0, groupEui, null, 0);
+            ReportResult reportResult;
+            testPythonInterpreter(groupEui);
+        } catch (Exception e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
+    }
+
+    private void testPythonInterpreter(String groupEui) {
+        try {
+            String script = """
+                    def process_java_object(java_obj):
+                        # Access the Java object's methods
+                        #message = java_obj.getMessage()
+                        # Perform some processing (e.g., convert to uppercase)
+                        #result = message.upper()
+                        result = java_obj.upper()
+                        return result
+                    """;
+            PythonInterpreter interpreter = new PythonInterpreter();
+            interpreter.set("java_obj", "Hello "+groupEui);
+            // Execute the Jython script
+            interpreter.exec(script);
+
+            // Call the Python function and get the result
+            PyObject result = interpreter.eval("process_java_object(java_obj)");
+            logger.info("Result: " + result);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
 }
