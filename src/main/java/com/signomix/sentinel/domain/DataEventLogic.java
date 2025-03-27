@@ -19,6 +19,8 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.reactive.messaging.Channel;
 import org.eclipse.microprofile.reactive.messaging.Emitter;
 import org.jboss.logging.Logger;
+import org.jboss.logmanager.handlers.SyslogHandler.SyslogType;
+import org.python.core.PyException;
 import org.python.core.PyObject;
 import org.python.util.PythonInterpreter;
 
@@ -205,6 +207,13 @@ public class DataEventLogic {
             for (List deviceParamsAndValues : values) {
                 String deviceEui = ((LastDataPair) deviceParamsAndValues.get(0)).eui;
                 result = runConfigQuery(config, deviceEui, deviceChannelMap, values);
+                if(result.error) {
+                    logger.error("Error while running config query for sentinel: " + config.id);
+                    saveSignal(-1, config.id, config.organizationId, config.userId, eui,
+                    "rule error", result.errorMessage, System.currentTimeMillis());
+                    sendAlert("ALERT", config.userId, eui, "rule error", result.errorMessage, System.currentTimeMillis());
+                    return;
+                }
                 configConditionsMet = configConditionsMet || result.violated;
             }
             int status = sentinelDao.getSentinelStatus(config.id);
@@ -500,6 +509,8 @@ public class DataEventLogic {
             logger.error(e.getMessage());
             e.printStackTrace();
             result.violated = false;
+            result.error = true;
+            result.errorMessage = e.getMessage();
             return result;
         }
     }
@@ -510,11 +521,11 @@ public class DataEventLogic {
         long startTime = System.currentTimeMillis();
         try {
             logger.info("Running Python script for sentinel: " + config.id);
-            logger.info("deviceChannelMap size: " + deviceChannelMap.size());
+            logger.debug("deviceChannelMap size: " + deviceChannelMap.size());
             deviceChannelMap.forEach((k, v) -> {
-                logger.info("key: " + k + " value: " + v);
+                logger.debug("key: " + k + " value: " + v);
             });
-            logger.info("values: " + values.toString());
+            logger.debug("values: " + values.toString());
             String script = """
                     def get_measurementIndex(eui, measurement, deviceChannelMap):
                         measurementIndex = -1
@@ -564,65 +575,69 @@ public class DataEventLogic {
                         channelMap = deviceChannelMap
                         result = ""
 
-                        # Access the Java object's methods
-                        #message = java_obj.getMessage()
-                        # Perform some processing (e.g., convert to uppercase)
-                        #result = message.upper()
-                        #result = config_obj.name.upper()
-                        #result = values[0][0].value
-                        #get_measurementIndex("IOTEMULATOR", "temperature", deviceChannelMap)
-                        #result = get_value("IOTEMULATOR", "temperature", values, deviceChannelMap)
-
-                        #result = getValue("temperature")
-                        try:
-                            result = checkRule()
-                        except:
-                            print("Script error")
-                            result = ""
+                        result = checkRule()
                         return result
 
-                    def buildResponse(measurement, value):
+                    def conditionsMet(measurement, value):
                         return config.deviceEui + ";" + measurement + ";" + str(value)
 
+                    def conditionsNotMet():
+                        return ""
+
                     #def checkRule():
-                    #    result = False
                     #    v1 = getValue("temperature")
                     #    v2 = getValue("humidity")
                     #    if v1 is None or v2 is None:
-                    #        return False
+                    #        return conditionsNotMet()
                     #    if v2 - v1 > 10:
-                    #        result = True
-                    #    return result
+                    #        result = conditionsMet("temperature", v1)
+                    #    return conditionsNotMet()
 
                     """;
             script = script + config.script;
-            PythonInterpreter interpreter = new PythonInterpreter();
-            interpreter.set("config_obj", config);
-            interpreter.set("values", values);
-            interpreter.set("deviceChannelMap", deviceChannelMap);
-            // Execute the Jython script
-            logger.info("\n"+script);
-            interpreter.exec(script);
-            // Call the Python function and get the result
-            PyObject pResult = interpreter.eval("process_java_object(config_obj,values,deviceChannelMap)");
-            interpreter.close();
-            logger.info("pResult: " + pResult.toString());
-            logger.info("pResult type: " + pResult.getType());
-            //logger.info("pResult asInt: " + pResult.asInt());
-            //result.violated = pResult.asInt() > 0;
-            String scriptResult= pResult.toString();
-            result.violated = scriptResult.length() > 0;
-            if(result.violated){
-                logger.info("Script result: " + scriptResult);
-                String[] scriptResultArr = scriptResult.split(";");
-                result.eui = scriptResultArr[0];
-                result.measurement = scriptResultArr[1];
-                result.value = Double.parseDouble(scriptResultArr[2]);
+            logger.info("\n" + script);
+            PythonInterpreter interpreter = null;
+            PyObject pResult = null;
+            try {
+                interpreter = new PythonInterpreter();
+                interpreter.set("config_obj", config);
+                interpreter.set("values", values);
+                interpreter.set("deviceChannelMap", deviceChannelMap);
+                // Execute the Jython script
+                interpreter.exec(script);
+                // Call the Python function and get the result
+                pResult = interpreter.eval("process_java_object(config_obj,values,deviceChannelMap)");
+
+                logger.info("pResult: " + pResult.toString());
+                logger.info("pResult type: " + pResult.getType());
+                // logger.info("pResult asInt: " + pResult.asInt());
+                // result.violated = pResult.asInt() > 0;
+                String scriptResult = pResult.toString();
+                result.violated = scriptResult.length() > 0;
+                if (result.violated) {
+                    logger.info("Script result: " + scriptResult);
+                    String[] scriptResultArr = scriptResult.split(";");
+                    result.eui = scriptResultArr[0];
+                    result.measurement = scriptResultArr[1];
+                    result.value = Double.parseDouble(scriptResultArr[2]);
+                }
+            } catch (PyException e) {
+                e.printStackTrace();
+                logger.error(e.getMessage());
+                result.error = true;
+                result.errorMessage = e.getMessage();
+            } finally {
+                if(null!=interpreter){
+                    interpreter.close();
+                }
             }
             long endTime = System.currentTimeMillis();
             logger.info("Python script execution time: " + (endTime - startTime) + " ms");
         } catch (Exception e) {
             e.printStackTrace();
+            logger.error(e.getMessage());
+            result.error = true;
+            result.errorMessage = e.getMessage();
         }
         return result;
     }
@@ -738,6 +753,8 @@ public class DataEventLogic {
                 e.printStackTrace();
             }
         }
+        logger.info("Sending alert: " + userId + ";" + deviceEui + ";" + alertType + ";" + alertMessage + ";"
+                + alertSubject);
         alertEmitter.send(userId + "\t" + deviceEui + "\t" + alertType + "\t" + alertMessage + "\t" + alertSubject);
     }
 
@@ -822,7 +839,8 @@ public class DataEventLogic {
         result = result.replaceAll("\\{device.eui\\}", device.getEUI());
         result = result.replaceAll("\\{device.name\\}", device.getName());
         result = result.replaceAll("\\{var\\}", violationResult.measurement);
-        result = result.replaceAll("\\{value\\}", "");
+        result = result.replaceAll("\\{measurement\\}", violationResult.measurement);
+        result = result.replaceAll("\\{value\\}", violationResult.value.toString());
         return result;
     }
 
