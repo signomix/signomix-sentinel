@@ -183,7 +183,11 @@ public class DataEventLogic {
         // columnName is d1, d2, ..., d24
         Map<String, Map<String, String>> deviceChannelMap = null;
         try {
-            deviceChannelMap = sentinelDao.getDeviceChannelsByConfigId(config.id);
+            if (config.checkOthers) {
+                deviceChannelMap = sentinelDao.getDeviceChannelsByConfigId(config.id);
+            } else {
+                deviceChannelMap = sentinelDao.getDeviceChannelsByConfigAndEui(config.id, deviceEui);
+            }
         } catch (IotDatabaseException e) {
             e.printStackTrace();
             logger.error(e.getMessage());
@@ -207,11 +211,12 @@ public class DataEventLogic {
             for (List deviceParamsAndValues : values) {
                 String deviceEui = ((LastDataPair) deviceParamsAndValues.get(0)).eui;
                 result = runConfigQuery(config, deviceEui, deviceChannelMap, values);
-                if(result.error) {
+                if (result.error) {
                     logger.error("Error while running config query for sentinel: " + config.id);
                     saveSignal(-1, config.id, config.organizationId, config.userId, eui,
-                    "rule error", result.errorMessage, System.currentTimeMillis());
-                    sendAlert("ALERT", config.userId, eui, "rule error", result.errorMessage, System.currentTimeMillis());
+                            "rule error", result.errorMessage, System.currentTimeMillis());
+                    sendAlert("ALERT", config.userId, eui, "rule error", result.errorMessage,
+                            System.currentTimeMillis());
                     return;
                 }
                 configConditionsMet = configConditionsMet || result.violated;
@@ -627,7 +632,7 @@ public class DataEventLogic {
                 result.error = true;
                 result.errorMessage = e.getMessage();
             } finally {
-                if(null!=interpreter){
+                if (null != interpreter) {
                     interpreter.close();
                 }
             }
