@@ -3,8 +3,8 @@ package com.signomix.sentinel.adapter.in;
 import org.eclipse.microprofile.reactive.messaging.Incoming;
 import org.jboss.logging.Logger;
 
-import com.signomix.sentinel.domain.DeviceEventLogic;
-import com.signomix.sentinel.port.in.DataEventReceiverPort;
+import com.signomix.sentinel.port.in.CommandEventReceivedPort;
+import com.signomix.sentinel.port.in.DataEventReceivedPort;
 import com.signomix.sentinel.port.in.DeviceEventPort;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -17,15 +17,24 @@ public class MqttClient {
     Logger logger;
 
     @Inject
-    DataEventReceiverPort dataEventReceiverPort;
+    CommandEventReceivedPort commandEventReceivedPort;
+
+    @Inject
+    DataEventReceivedPort dataEventReceivedPort;
 
     @Inject
     DeviceEventPort deviceEventPort;
 
+
+    @Incoming("command-created")
+    public void receiveCommand(byte[] command) {
+        commandEventReceivedPort.receive(command);
+    }
+
     @Incoming("data-received")
     public void receive(byte[] eui) {
         logger.info("Data received: " + eui);
-        dataEventReceiverPort.receive(eui);
+        dataEventReceivedPort.receive(eui);
     }
 
     @Incoming("device-created")

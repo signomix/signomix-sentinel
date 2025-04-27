@@ -5,11 +5,14 @@ import java.util.List;
 
 import org.jboss.logging.Logger;
 
+import com.signomix.common.Organization;
 import com.signomix.common.User;
+import com.signomix.common.db.IotDatabaseException;
 import com.signomix.common.db.IotDatabaseIface;
 import com.signomix.common.db.SentinelDaoIface;
 import com.signomix.common.iot.Device;
 import com.signomix.common.iot.sentinel.SentinelConfig;
+import com.signomix.common.tsdb.OrganizationDao;
 
 import io.agroal.api.AgroalDataSource;
 import io.quarkus.agroal.DataSource;
@@ -35,6 +38,7 @@ public class SentinelLogic {
     SentinelDaoIface sentinelDao;
     IotDatabaseIface olapDao;
     IotDatabaseIface oltpDao;
+    OrganizationDao organizationDao;
 
     void onStart(@Observes StartupEvent ev) {
         sentinelDao = new com.signomix.common.tsdb.SentinelDao();
@@ -43,6 +47,8 @@ public class SentinelLogic {
         olapDao.setDatasource(olapDs);
         oltpDao = new com.signomix.common.tsdb.IotDatabaseDao();
         oltpDao.setDatasource(tsDs);
+        organizationDao = new OrganizationDao();
+        organizationDao.setDatasource(tsDs);
     }
 
     public SentinelConfig getSentinelConfig(User user, long id) {
@@ -82,6 +88,23 @@ public class SentinelLogic {
     }
 
     public void updateSentinelConfig(User user, SentinelConfig config) {
+        Organization org = null;
+        try {
+            org= organizationDao.getOrganization(user.organization);
+        } catch (IotDatabaseException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+            logger.error(e.getMessage());
+            return;
+        }
+        if (org == null) {
+            logger.error("Organization not found");
+            return;
+        }
+        if (org.locked) {
+            logger.error("Organization is locked");
+            return;
+        }
         try {
             SentinelConfig oldConfig = sentinelDao.getConfig(config.id);
             sentinelDao.removeDevices(oldConfig.id);
@@ -106,6 +129,23 @@ public class SentinelLogic {
     }
 
     public void deleteSentinelConfig(User user, long id) {
+        Organization org = null;
+        try {
+            org= organizationDao.getOrganization(user.organization);
+        } catch (IotDatabaseException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+            logger.error(e.getMessage());
+            return;
+        }
+        if (org == null) {
+            logger.error("Organization not found");
+            return;
+        }
+        if (org.locked) {
+            logger.error("Organization is locked");
+            return;
+        }
         try {
             sentinelDao.removeDevices(id);
             sentinelDao.removeConfig(id);

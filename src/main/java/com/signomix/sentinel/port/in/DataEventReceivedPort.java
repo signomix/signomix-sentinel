@@ -6,7 +6,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 @ApplicationScoped
-public class DataEventReceiverPort {
+public class DataEventReceivedPort {
 
     @Inject
     DataEventLogic dataEventLogic;
