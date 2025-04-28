@@ -203,14 +203,21 @@ public class DataEventLogic {
     private void checkSentinelRelatedData(SentinelConfig config, Map deviceChannelMap, String eui) {
         List<List<LastDataPair>> values;
         logger.info("Checking sentinel related data for sentinel: " + config.id);
-        ConditionViolationResult result = new ConditionViolationResult();
+        ConditionResult result = new ConditionResult();
+        Device device = null;
         try {
             values = sentinelDao.getLastValuesOfDevices(deviceChannelMap.keySet(), config.timeShift * 60);
             logger.info(config.id + " number of values: " + values.size());
             boolean configConditionsMet = false; // true if at least one device meets the conditions
             for (List deviceParamsAndValues : values) {
                 String deviceEui = ((LastDataPair) deviceParamsAndValues.get(0)).eui;
-                result = runConfigQuery(config, deviceEui, deviceChannelMap, values);
+                try{
+                    device = olapDao.getDevice(deviceEui, false);
+                } catch (IotDatabaseException e) {
+                    logger.error("Error while getting device: " + deviceEui);
+                    continue;
+                }
+                result = runConfigQuery(config, device, deviceChannelMap, values);
                 if (result.error) {
                     logger.error("Error while running config query for sentinel: " + config.id);
                     saveSignal(-1, config.id, config.organizationId, config.userId, eui,
@@ -222,7 +229,7 @@ public class DataEventLogic {
                 configConditionsMet = configConditionsMet || result.violated;
             }
             int status = sentinelDao.getSentinelStatus(config.id);
-            Device device = null;
+            device = null;
             DeviceGroup group = null;
             if (!configConditionsMet) {
                 logger.info("Conditions not met for sentinel: " + config.id);
@@ -266,17 +273,17 @@ public class DataEventLogic {
      * @param values           the map of measurement values to use for the query
      * @return
      */
-    private ConditionViolationResult runConfigQuery(SentinelConfig config, String deviceEui, Map deviceChannelMap,
+    private ConditionResult runConfigQuery(SentinelConfig config, Device device, Map deviceChannelMap,
             List<List<LastDataPair>> values) {
 
-        ConditionViolationResult result = new ConditionViolationResult();
+        ConditionResult result = new ConditionResult();
         result.violated = false;
         result.value = null;
         result.measurement = "";
 
         if (config.useScript && config.script != null && !config.script.isEmpty()) {
             logger.info("Running script : " + config.script);
-            return runPythonScript(config, deviceEui, deviceChannelMap, values);
+            return runPythonScript(config, device, deviceChannelMap, values);
         }
 
         try {
@@ -330,7 +337,7 @@ public class DataEventLogic {
                     LastDataPair dataToCheck;
                     for (int j = 0; j < values.size(); j++) {
                         // get column index for measurement
-                        Map<String, String> measurementMap = (Map) deviceChannelMap.get(deviceEui);
+                        Map<String, String> measurementMap = (Map) deviceChannelMap.get(device.getEUI());
                         String columnNumberStr = measurementMap.get(condition.measurement);
                         if (columnNumberStr == null || columnNumberStr.isEmpty()) {
                             logger.info("columnNumberStr is null or empty for measurement: " + condition.measurement);
@@ -520,9 +527,9 @@ public class DataEventLogic {
         }
     }
 
-    private ConditionViolationResult runPythonScript(SentinelConfig config, String deviceEui, Map deviceChannelMap,
+    private ConditionResult runPythonScript(SentinelConfig config, Device device, Map deviceChannelMap,
             List<List<LastDataPair>> values) {
-        ConditionViolationResult result = new ConditionViolationResult();
+        ConditionResult result = new ConditionResult();
         long startTime = System.currentTimeMillis();
         try {
             logger.info("Running Python script for sentinel: " + config.id);
@@ -571,9 +578,11 @@ public class DataEventLogic {
                                 return valuesArr[i][measurementIndex].value
                         return None
 
-                    def process_java_object(config_obj, values, deviceChannelMap):
+                    def process_java_object(config_obj, device_obj, values, deviceChannelMap):
                         global config
                         config = config_obj
+                        global device
+                        device = device_obj
                         global valuesArr
                         valuesArr = values
                         global channelMap
@@ -583,11 +592,14 @@ public class DataEventLogic {
                         result = checkRule()
                         return result
 
+                    def conditionsMetWithCommand(measurement, value, commandTarget, command):
+                        return config.deviceEui + ";" + measurement + ";" + str(value) + ";" + commandTarget + ";" + command
+                    
                     def conditionsMet(measurement, value):
                         return config.deviceEui + ";" + measurement + ";" + str(value)
 
                     def conditionsNotMet():
-                        return ""
+                        return ";;"
 
                     #def checkRule():
                     #    v1 = getValue("temperature")
@@ -606,12 +618,13 @@ public class DataEventLogic {
             try {
                 interpreter = new PythonInterpreter();
                 interpreter.set("config_obj", config);
+                interpreter.set("device_obj", device);
                 interpreter.set("values", values);
                 interpreter.set("deviceChannelMap", deviceChannelMap);
                 // Execute the Jython script
                 interpreter.exec(script);
                 // Call the Python function and get the result
-                pResult = interpreter.eval("process_java_object(config_obj,values,deviceChannelMap)");
+                pResult = interpreter.eval("process_java_object(config_obj,device_obj,values,deviceChannelMap)");
 
                 logger.info("pResult: " + pResult.toString());
                 logger.info("pResult type: " + pResult.getType());
@@ -619,13 +632,23 @@ public class DataEventLogic {
                 // result.violated = pResult.asInt() > 0;
                 String scriptResult = pResult.toString();
                 result.violated = scriptResult.length() > 0;
-                if (result.violated) {
-                    logger.info("Script result: " + scriptResult);
-                    String[] scriptResultArr = scriptResult.split(";");
-                    result.eui = scriptResultArr[0];
-                    result.measurement = scriptResultArr[1];
+
+                logger.info("Script result: " + scriptResult);
+                String[] scriptResultArr = scriptResult.split(";");
+                result.eui = scriptResultArr[0].trim();
+                result.violated = result.eui.length() > 0;
+                result.measurement = scriptResultArr[1].trim();
+                try {
                     result.value = Double.parseDouble(scriptResultArr[2]);
+                } catch (Exception e) {
+                    logger.debug("Error parsing value: " + scriptResultArr[2]);
+                    result.value = null;
                 }
+                if (scriptResultArr.length == 5) {
+                    result.commandTarget = scriptResultArr[3].trim();
+                    result.command = scriptResultArr[4].trim();
+                }
+
             } catch (PyException e) {
                 e.printStackTrace();
                 logger.error(e.getMessage());
@@ -647,7 +670,7 @@ public class DataEventLogic {
         return result;
     }
 
-    private void saveResetEvent(SentinelConfig config, Device device, ConditionViolationResult violationResult) {
+    private void saveResetEvent(SentinelConfig config, Device device, ConditionResult violationResult) {
         DeviceGroup group = null;
         if (config.groupEui != null && !config.groupEui.isEmpty()) {
             try {
@@ -699,7 +722,7 @@ public class DataEventLogic {
         }
     }
 
-    private void saveEvent(SentinelConfig config, Device device, ConditionViolationResult violationResult) {
+    private void saveEvent(SentinelConfig config, Device device, ConditionResult violationResult) {
         logger.info("Saving event for sentinel: " + config.id);
         DeviceGroup group = null;
         if (config.groupEui != null && !config.groupEui.isEmpty()) {
@@ -822,7 +845,7 @@ public class DataEventLogic {
     }
 
     private String transformMessage(String message, SentinelConfig config,
-            Device device, DeviceGroup group, ConditionViolationResult violationResult) {
+            Device device, DeviceGroup group, ConditionResult violationResult) {
         String result = message;
         String targetEui = "";
         String targetName = "";

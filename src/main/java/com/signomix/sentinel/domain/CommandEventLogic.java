@@ -84,7 +84,7 @@ public class CommandEventLogic {
      * Finds all sentinel definitions related to the device and checks alert
      * conditions for each one.
      * 
-     * @param deviceEui the EUI of the device that sent the data
+     * @param commandString the EUI of the device that sent the data
      */
     public void handleCommandCreatedEvent(String commandString) {
         // logger.info("Handling data received event: " + deviceEui);
@@ -106,10 +106,11 @@ public class CommandEventLogic {
         String[] groups = new String[0];
         String deviceEui = commandParts[0];
         String jsonString = commandParts[1];
+        Device device=null;
 
         logger.info("Command received: " + deviceEui + " " + jsonString);
         try {
-            Device device = olapDao.getDevice(deviceEui, false);
+            device = olapDao.getDevice(deviceEui, false);
             List<Tag> tags = olapDao.getDeviceTags(deviceEui);
             logger.info("tags: " + deviceEui + " " + tags.size());
             if (tags.size() > 0) {
@@ -122,6 +123,8 @@ public class CommandEventLogic {
         } catch (IotDatabaseException e) {
             // TODO Auto-generated catch block
             e.printStackTrace();
+            logger.error(e.getMessage());
+            return;
         }
 
         HashMap<Long, SentinelConfig> configs = new HashMap<>();
@@ -177,7 +180,7 @@ public class CommandEventLogic {
             if (!config.active) {
                 continue;
             }
-            runSentinelCheck(config, deviceEui, jsonString);
+            runSentinelCheck(config, device, jsonString);
         }
     }
 
@@ -188,78 +191,36 @@ public class CommandEventLogic {
      * @param deviceEui the EUI of the device that sent the data which triggered the
      *                  check
      */
-    private void runSentinelCheck(SentinelConfig config, String deviceEui, String jsonString) {
+    private void runSentinelCheck(SentinelConfig config, Device device, String jsonString) {
         logger.info("Running sentinel check for config: " + config.id);
         if (config.useScript && config.script != null && !config.script.isEmpty()) {
             logger.info("Running script : " + config.script);
-            runPythonScript(config, deviceEui, jsonString);
+            //runPythonScript(config, device, jsonString);
         }
 
     }
 
-    private ConditionViolationResult runPythonScript(SentinelConfig config, String deviceEui, String jsonString) {
-        ConditionViolationResult result = new ConditionViolationResult();
+    private ConditionResult runPythonScript(SentinelConfig config, Device device, String jsonString) {
+        ConditionResult result = new ConditionResult();
         long startTime = System.currentTimeMillis();
         try {
             logger.info("Running Python script for sentinel: " + config.id);
-
             String script = """
-                    def get_measurementIndex(eui, measurement, deviceChannelMap):
-                        measurementIndex = -1
-                        deviceChannels = deviceChannelMap.get(eui)
-                        if deviceChannels is not None:
-                            for key, value in deviceChannels.items():
-                                if key == measurement:
-                                    measurementIndex = int(value[1:]) -1 # column numbers start from 1 (name d1), but list indexes start from 0
-                                    break
-                            # print measurement index for debugging
-                            print("Measurement index: " + str(measurementIndex))
-                        return measurementIndex
 
-                    def get_value(eui, measurement, values, deviceChannelMap):
-                        measurementIndex = get_measurementIndex(eui, measurement, deviceChannelMap)
-                        if measurementIndex < 0:
-                            return None
-                        for i in range(len(values)):
-                            if values[i][0].eui == eui:
-                                return values[i][measurementIndex].value
-                        return None
-
-                    def get_delta(eui, measurement, values, deviceChannelMap):
-                        measurementIndex = get_measurementIndex(eui, measurement, deviceChannelMap)
-                        if measurementIndex < 0:
-                            return None
-                        for i in range(len(values)):
-                            if values[i][0].eui == eui:
-                                return values[i][measurementIndex].delta
-                        return None
-
-                    def getValue(measurement):
-                        measurementIndex = get_measurementIndex(config.deviceEui, measurement, channelMap)
-                        if measurementIndex < 0:
-                            return None
-                        for i in range(len(valuesArr)):
-                            if valuesArr[i][0].eui == config.deviceEui:
-                                return valuesArr[i][measurementIndex].value
-                        return None
-
-                    def process_java_object(config_obj, values, deviceChannelMap):
+                    def process_java_object(config_obj, device_obj, commandString):
                         global config
                         config = config_obj
-                        global valuesArr
-                        valuesArr = values
-                        global channelMap
-                        channelMap = deviceChannelMap
+                        global device
+                        device = device_obj
                         result = ""
-
                         result = checkRule()
                         return result
-
-                    def conditionsMet(measurement, value):
-                        return config.deviceEui + ";" + measurement + ";" + str(value)
-
+                    
                     def conditionsNotMet():
-                        return ""
+                        return ";;"
+
+                    def conditionsMetWithCommand(measurement, value, commandTarget, command):
+                        return config.deviceEui + ";" + measurement + ";" + str(value) + ";" + commandTarget + ";" + command
 
                     #def checkRule():
                     #    v1 = getValue("temperature")
@@ -268,7 +229,8 @@ public class CommandEventLogic {
                     #        return conditionsNotMet()
                     #    if v2 - v1 > 10:
                     #        result = conditionsMet("temperature", v1)
-                    #    return conditionsNotMet()
+                    #    return conditionsMetWithCommand("", null, "myDeviceEui", "{\"command\": \"myCommand\"}")
+                    #    #return conditionsNotMet()
 
                     """;
             script = script + config.script;
@@ -278,12 +240,12 @@ public class CommandEventLogic {
             try {
                 interpreter = new PythonInterpreter();
                 interpreter.set("config_obj", config);
-                interpreter.set("values", values);
-                interpreter.set("deviceChannelMap", deviceChannelMap);
+                interpreter.set("device_obj", device);
+                interpreter.set("commandString", jsonString);
                 // Execute the Jython script
                 interpreter.exec(script);
                 // Call the Python function and get the result
-                pResult = interpreter.eval("process_java_object(config_obj,values,deviceChannelMap)");
+                pResult = interpreter.eval("process_java_object(config_obj,device_obj,commandString)");
 
                 logger.info("pResult: " + pResult.toString());
                 logger.info("pResult type: " + pResult.getType());
