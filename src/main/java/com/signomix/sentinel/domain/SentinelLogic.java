@@ -65,7 +65,7 @@ public class SentinelLogic {
     public List<SentinelConfig> getSentinelConfigs(User user, int limit, int offset) {
         List<SentinelConfig> configs = new ArrayList<>();
         try {
-            configs = sentinelDao.getConfigs(user.uid, limit, offset);
+            configs = sentinelDao.getConfigs(user.uid, limit, offset, SentinelConfig.EVENT_TYPE_ANY);
         } catch (Exception e) {
             e.printStackTrace();
             logger.error(e.getMessage());

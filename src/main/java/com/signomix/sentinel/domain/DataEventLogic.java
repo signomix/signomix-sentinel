@@ -116,7 +116,7 @@ public class DataEventLogic {
         HashMap<Long, SentinelConfig> configs = new HashMap<>();
         // find all sentinel definitions related to the device
         try {
-            List<SentinelConfig> configList = sentinelDao.getConfigsByDevice(deviceEui, 1000, 0);
+            List<SentinelConfig> configList = sentinelDao.getConfigsByDevice(deviceEui, 1000, 0, SentinelConfig.EVENT_TYPE_DATA);
             for (SentinelConfig config : configList) {
                 configs.put(config.id, config);
             }
@@ -128,7 +128,7 @@ public class DataEventLogic {
         }
         if (!tag.isEmpty() && !tagValue.isEmpty()) {
             try {
-                List<SentinelConfig> tagConfigs = sentinelDao.getConfigsByTag(tag, tagValue, 1000, 0);
+                List<SentinelConfig> tagConfigs = sentinelDao.getConfigsByTag(tag, tagValue, 1000, 0, SentinelConfig.EVENT_TYPE_DATA);
                 logger.info("Number of sentinel configs for tag: " + deviceEui + " " + tag + ":" + tagValue + " "
                         + tagConfigs.size());
                 for (SentinelConfig config : tagConfigs) {
@@ -146,7 +146,7 @@ public class DataEventLogic {
                 if (groupName.isEmpty()) {
                     continue;
                 }
-                List<SentinelConfig> groupConfigs = sentinelDao.getConfigsByGroup(groups[i].trim(), 1000, 0);
+                List<SentinelConfig> groupConfigs = sentinelDao.getConfigsByGroup(groups[i].trim(), 1000, 0, SentinelConfig.EVENT_TYPE_DATA);
                 for (SentinelConfig config : groupConfigs) {
                     configs.put(config.id, config);
                 }

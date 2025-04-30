@@ -1,40 +1,26 @@
 package com.signomix.sentinel.domain;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Predicate;
-
-import javax.script.Bindings;
-import javax.script.ScriptContext;
-import javax.script.ScriptEngine;
-import javax.script.ScriptEngineFactory;
-import javax.script.ScriptEngineManager;
-import javax.script.ScriptException;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.reactive.messaging.Channel;
 import org.eclipse.microprofile.reactive.messaging.Emitter;
 import org.jboss.logging.Logger;
-import org.jboss.logmanager.handlers.SyslogHandler.SyslogType;
 import org.python.core.PyException;
 import org.python.core.PyObject;
 import org.python.util.PythonInterpreter;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.signomix.common.Tag;
 import com.signomix.common.db.IotDatabaseException;
 import com.signomix.common.db.IotDatabaseIface;
 import com.signomix.common.db.SentinelDaoIface;
 import com.signomix.common.db.SignalDaoIface;
 import com.signomix.common.iot.Device;
-import com.signomix.common.iot.DeviceGroup;
-import com.signomix.common.iot.LastDataPair;
-import com.signomix.common.iot.sentinel.AlarmCondition;
 import com.signomix.common.iot.sentinel.SentinelConfig;
-import com.signomix.common.iot.sentinel.Signal;
 
 import io.agroal.api.AgroalDataSource;
 import io.quarkus.agroal.DataSource;
@@ -64,6 +50,10 @@ public class CommandEventLogic {
 
     @Inject
     SignalLogic sentinelLogic;
+
+    // @Inject
+    // @Channel("command-created")
+    // Emitter<String> commandCreatedEmitter;
 
     @ConfigProperty(name = "signomix.signals.used", defaultValue = "false")
     Boolean signalsUsed;
@@ -130,7 +120,7 @@ public class CommandEventLogic {
         HashMap<Long, SentinelConfig> configs = new HashMap<>();
         // find all sentinel definitions related to the device
         try {
-            List<SentinelConfig> configList = sentinelDao.getConfigsByDevice(deviceEui, 1000, 0);
+            List<SentinelConfig> configList = sentinelDao.getConfigsByDevice(deviceEui, 1000, 0, SentinelConfig.EVENT_TYPE_COMMAND);
             for (SentinelConfig config : configList) {
                 configs.put(config.id, config);
             }
@@ -142,7 +132,7 @@ public class CommandEventLogic {
         }
         if (!tag.isEmpty() && !tagValue.isEmpty()) {
             try {
-                List<SentinelConfig> tagConfigs = sentinelDao.getConfigsByTag(tag, tagValue, 1000, 0);
+                List<SentinelConfig> tagConfigs = sentinelDao.getConfigsByTag(tag, tagValue, 1000, 0, SentinelConfig.EVENT_TYPE_COMMAND);
                 logger.info("Number of sentinel configs for tag: " + deviceEui + " " + tag + ":" + tagValue + " "
                         + tagConfigs.size());
                 for (SentinelConfig config : tagConfigs) {
@@ -160,7 +150,7 @@ public class CommandEventLogic {
                 if (groupName.isEmpty()) {
                     continue;
                 }
-                List<SentinelConfig> groupConfigs = sentinelDao.getConfigsByGroup(groups[i].trim(), 1000, 0);
+                List<SentinelConfig> groupConfigs = sentinelDao.getConfigsByGroup(groups[i].trim(), 1000, 0, SentinelConfig.EVENT_TYPE_COMMAND);
                 for (SentinelConfig config : groupConfigs) {
                     configs.put(config.id, config);
                 }
@@ -195,7 +185,18 @@ public class CommandEventLogic {
         logger.info("Running sentinel check for config: " + config.id);
         if (config.useScript && config.script != null && !config.script.isEmpty()) {
             logger.info("Running script : " + config.script);
-            //runPythonScript(config, device, jsonString);
+            ConditionResult result = runPythonScript(config, device, jsonString);
+            if(result.command!=null && result.commandTarget!=null) {
+                try {
+                    logger.info("Command: " + result.command);
+                    logger.info("Command target: " + result.commandTarget);
+                    oltpDao.putDeviceCommand(result.commandTarget, "ACTUATOR_CMD", result.command, System.currentTimeMillis());
+                    // mqtt message about created command will not be send to prevent loops 
+                } catch (IotDatabaseException e) {
+                    e.printStackTrace();
+                    logger.error(e.getMessage());
+                }
+            }
         }
 
     }
@@ -203,34 +204,61 @@ public class CommandEventLogic {
     private ConditionResult runPythonScript(SentinelConfig config, Device device, String jsonString) {
         ConditionResult result = new ConditionResult();
         long startTime = System.currentTimeMillis();
+        HashMap<String,Object> commandMap;
+        ObjectMapper objectMapper = new ObjectMapper();
         try {
             logger.info("Running Python script for sentinel: " + config.id);
+            String jString = jsonString.trim();
+            if(jString.startsWith("&") || jString.startsWith("#")) {
+                jString = jString.substring(1);
+            }
+            commandMap = objectMapper.readValue(jString, HashMap.class);
             String script = """
-
-                    def process_java_object(config_obj, device_obj, commandString):
+                    def process_java_object(config_obj, device_obj, commandMap):
                         global config
                         config = config_obj
                         global device
                         device = device_obj
                         result = ""
+                        global command
+                        command = commandMap
                         result = checkRule()
                         return result
                     
+                    def getDeviceGroupName(groupNumber)
+                        if device is None:
+                            return None
+                        if device.get("groups") is None:
+                            return None
+                        groups = device.get("groups").split(",")
+                        if groupNumber >= len(groups):
+                            return None
+                        if groups[groupNumber] is None or groups[groupNumber].length() == 0:
+                            return None
+                        return groups[groupNumber]
+
+                    def getCommandParam(commandParameter):
+                        global command
+                        if command is None:
+                            return None
+                        if command.get(commandParameter) is None:
+                            return None
+                        return command.get(commandParameter)
+
                     def conditionsNotMet():
                         return ";;"
 
                     def conditionsMetWithCommand(measurement, value, commandTarget, command):
+                        if value is None:
+                            return config.deviceEui + ";" + measurement + ";;" + commandTarget + ";" + command
                         return config.deviceEui + ";" + measurement + ";" + str(value) + ";" + commandTarget + ";" + command
 
                     #def checkRule():
-                    #    v1 = getValue("temperature")
-                    #    v2 = getValue("humidity")
-                    #    if v1 is None or v2 is None:
+                    #    v1 = getCommandParam("status")
+                    #    if v1 is None:
                     #        return conditionsNotMet()
-                    #    if v2 - v1 > 10:
-                    #        result = conditionsMet("temperature", v1)
-                    #    return conditionsMetWithCommand("", null, "myDeviceEui", "{\"command\": \"myCommand\"}")
-                    #    #return conditionsNotMet()
+                    #    cmdString = "{\"command\": \"" + str(v1) + "\", \"value\": \"" + str(getCommandParam('value')) + "\"}"
+                    #    return conditionsMetWithCommand("", None, config.deviceEui, cmdString)
 
                     """;
             script = script + config.script;
@@ -241,24 +269,39 @@ public class CommandEventLogic {
                 interpreter = new PythonInterpreter();
                 interpreter.set("config_obj", config);
                 interpreter.set("device_obj", device);
-                interpreter.set("commandString", jsonString);
+                interpreter.set("commandMap", commandMap);
                 // Execute the Jython script
                 interpreter.exec(script);
                 // Call the Python function and get the result
-                pResult = interpreter.eval("process_java_object(config_obj,device_obj,commandString)");
+                pResult = interpreter.eval("process_java_object(config_obj,device_obj,commandMap)");
 
                 logger.info("pResult: " + pResult.toString());
                 logger.info("pResult type: " + pResult.getType());
                 // logger.info("pResult asInt: " + pResult.asInt());
                 // result.violated = pResult.asInt() > 0;
                 String scriptResult = pResult.toString();
-                result.violated = scriptResult.length() > 0;
+                String[] scriptResultArr = scriptResult.split(";");
+                result.violated = scriptResultArr[1].length() > 0 && scriptResultArr[2].length() > 0;
+                if(scriptResultArr.length < 3) {
+                    logger.warn("Invalid script result: " + scriptResult);
+                    result.error = true;
+                    result.errorMessage = "Invalid script result: " + scriptResult;
+                    return result;
+                }
                 if (result.violated) {
                     logger.info("Script result: " + scriptResult);
-                    String[] scriptResultArr = scriptResult.split(";");
+                    
                     result.eui = scriptResultArr[0];
                     result.measurement = scriptResultArr[1];
-                    result.value = Double.parseDouble(scriptResultArr[2]);
+                    try{
+                        result.value = Double.parseDouble(scriptResultArr[2]);
+                    }catch (NumberFormatException e) {
+                        result.value = null;
+                    }
+                }
+                if (scriptResultArr.length == 5) {
+                    result.commandTarget = scriptResultArr[3];
+                    result.command = scriptResultArr[4];
                 }
             } catch (PyException e) {
                 e.printStackTrace();

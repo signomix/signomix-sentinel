@@ -1,6 +1,5 @@
 package com.signomix.sentinel.port.in;
 
-import com.signomix.sentinel.domain.DataEventLogic;
 import com.signomix.sentinel.domain.DeviceEventLogic;
 
 import jakarta.enterprise.context.ApplicationScoped;
