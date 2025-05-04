@@ -253,6 +253,11 @@ public class CommandEventLogic {
                             return config.deviceEui + ";" + measurement + ";;" + commandTarget + ";" + command
                         return config.deviceEui + ";" + measurement + ";" + str(value) + ";" + commandTarget + ";" + command
 
+                    def newCommand(commandTarget, command):
+                        if commandTarget is None or command is None:
+                            return conditionsNotMet()
+                        return ";;;" + commandTarget + ";" + command
+
                     #def checkRule():
                     #    v1 = getCommandParam("status")
                     #    if v1 is None:
