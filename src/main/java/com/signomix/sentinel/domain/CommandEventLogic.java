@@ -5,10 +5,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
-import org.eclipse.microprofile.config.inject.ConfigProperty;
-import org.eclipse.microprofile.reactive.messaging.Channel;
-import org.eclipse.microprofile.reactive.messaging.Emitter;
-import org.jboss.logging.Logger;
 import org.python.core.PyException;
 import org.python.core.PyObject;
 import org.python.util.PythonInterpreter;
@@ -16,23 +12,15 @@ import org.python.util.PythonInterpreter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.signomix.common.Tag;
 import com.signomix.common.db.IotDatabaseException;
-import com.signomix.common.db.IotDatabaseIface;
-import com.signomix.common.db.SentinelDaoIface;
-import com.signomix.common.db.SignalDaoIface;
 import com.signomix.common.iot.Device;
 import com.signomix.common.iot.sentinel.SentinelConfig;
 
-import io.agroal.api.AgroalDataSource;
-import io.quarkus.agroal.DataSource;
-import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.event.Observes;
-import jakarta.inject.Inject;
 
 @ApplicationScoped
-public class CommandEventLogic {
+public class CommandEventLogic extends EventLogic {
 
-    @Inject
+/*     @Inject
     Logger logger;
 
     @Inject
@@ -58,7 +46,11 @@ public class CommandEventLogic {
     @ConfigProperty(name = "signomix.signals.used", defaultValue = "false")
     Boolean signalsUsed;
 
-    void onStart(@Observes StartupEvent ev) {
+    @Inject
+    Vertx vertx;
+
+    @PostConstruct
+    void onConstructed() {
         sentinelDao = new com.signomix.common.tsdb.SentinelDao();
         sentinelDao.setDatasource(tsDs);
         olapDao = new com.signomix.common.tsdb.IotDatabaseDao();
@@ -67,7 +59,8 @@ public class CommandEventLogic {
         signalDao.setDatasource(tsDs);
         oltpDao = new com.signomix.common.tsdb.IotDatabaseDao();
         oltpDao.setDatasource(tsDs);
-    }
+    } */
+
 
     /**
      * Handles the event of data being received from a device.
@@ -76,27 +69,33 @@ public class CommandEventLogic {
      * 
      * @param commandString the EUI of the device that sent the data
      */
-    public void handleCommandCreatedEvent(String commandString) {
+    @Override
+    public void handleEvent(int type, String eui, String commandString, String messageId) {
         // logger.info("Handling data received event: " + deviceEui);
         // testJsInterpreter(deviceEui);
         // testPythonInterpreter(deviceEui);
-        String command=commandString;
-        if(command.startsWith("&")|| command.startsWith("#")) {
-            command=command.substring(1);
+        String deviceEui = null;
+        String command = commandString;
+        String jsonString = null;
+        if (command.startsWith("&") || command.startsWith("#")) {
+            command = command.substring(1);
         }
-        String[] commandParts = command.split(";");
-        if (commandParts.length < 2) {
+        String[] commandParts = command.split(";", -1);
+        if (type == EventLogic.EVENT_TYPE_COMMAND && commandParts.length < 2) {
             logger.error("Invalid command: " + command);
             return;
         }
-        
 
         String tag = "";
         String tagValue = "";
         String[] groups = new String[0];
-        String deviceEui = commandParts[0];
-        String jsonString = commandParts[1];
-        Device device=null;
+        if (type == EventLogic.EVENT_TYPE_COMMAND) {
+            deviceEui = commandParts[0];
+            jsonString = commandParts[1];
+        } else {
+            deviceEui = eui;
+        }
+        Device device = null;
 
         logger.info("Command received: " + deviceEui + " " + jsonString);
         try {
@@ -120,7 +119,7 @@ public class CommandEventLogic {
         HashMap<Long, SentinelConfig> configs = new HashMap<>();
         // find all sentinel definitions related to the device
         try {
-            List<SentinelConfig> configList = sentinelDao.getConfigsByDevice(deviceEui, 1000, 0, SentinelConfig.EVENT_TYPE_COMMAND);
+            List<SentinelConfig> configList = sentinelDao.getConfigsByDevice(deviceEui, 1000, 0, type);
             for (SentinelConfig config : configList) {
                 configs.put(config.id, config);
             }
@@ -132,7 +131,7 @@ public class CommandEventLogic {
         }
         if (!tag.isEmpty() && !tagValue.isEmpty()) {
             try {
-                List<SentinelConfig> tagConfigs = sentinelDao.getConfigsByTag(tag, tagValue, 1000, 0, SentinelConfig.EVENT_TYPE_COMMAND);
+                List<SentinelConfig> tagConfigs = sentinelDao.getConfigsByTag(tag, tagValue, 1000, 0, type);
                 logger.info("Number of sentinel configs for tag: " + deviceEui + " " + tag + ":" + tagValue + " "
                         + tagConfigs.size());
                 for (SentinelConfig config : tagConfigs) {
@@ -150,7 +149,7 @@ public class CommandEventLogic {
                 if (groupName.isEmpty()) {
                     continue;
                 }
-                List<SentinelConfig> groupConfigs = sentinelDao.getConfigsByGroup(groups[i].trim(), 1000, 0, SentinelConfig.EVENT_TYPE_COMMAND);
+                List<SentinelConfig> groupConfigs = sentinelDao.getConfigsByGroup(groups[i].trim(), 1000, 0, type);
                 for (SentinelConfig config : groupConfigs) {
                     configs.put(config.id, config);
                 }
@@ -170,7 +169,7 @@ public class CommandEventLogic {
             if (!config.active) {
                 continue;
             }
-            runSentinelCheck(config, device, jsonString);
+            runSentinelCheck(messageId, config, device, jsonString);
         }
     }
 
@@ -181,17 +180,19 @@ public class CommandEventLogic {
      * @param deviceEui the EUI of the device that sent the data which triggered the
      *                  check
      */
-    private void runSentinelCheck(SentinelConfig config, Device device, String jsonString) {
+    @Override
+    void runSentinelCheck(String messageid, SentinelConfig config, Device device, String jsonString) {
         logger.info("Running sentinel check for config: " + config.id);
         if (config.useScript && config.script != null && !config.script.isEmpty()) {
             logger.info("Running script : " + config.script);
             ConditionResult result = runPythonScript(config, device, jsonString);
-            if(result.command!=null && result.commandTarget!=null) {
+            if (result.command != null && result.commandTarget != null) {
                 try {
                     logger.info("Command: " + result.command);
                     logger.info("Command target: " + result.commandTarget);
-                    oltpDao.putDeviceCommand(result.commandTarget, "ACTUATOR_CMD", result.command, System.currentTimeMillis());
-                    // mqtt message about created command will not be send to prevent loops 
+                    oltpDao.putDeviceCommand(result.commandTarget, "ACTUATOR_CMD", result.command,
+                            System.currentTimeMillis());
+                    // mqtt message about created command will not be send to prevent loops
                 } catch (IotDatabaseException e) {
                     e.printStackTrace();
                     logger.error(e.getMessage());
@@ -204,12 +205,12 @@ public class CommandEventLogic {
     private ConditionResult runPythonScript(SentinelConfig config, Device device, String jsonString) {
         ConditionResult result = new ConditionResult();
         long startTime = System.currentTimeMillis();
-        HashMap<String,Object> commandMap;
+        HashMap<String, Object> commandMap;
         ObjectMapper objectMapper = new ObjectMapper();
         try {
             logger.info("Running Python script for sentinel: " + config.id);
             String jString = jsonString.trim();
-            if(jString.startsWith("&") || jString.startsWith("#")) {
+            if (jString.startsWith("&") || jString.startsWith("#")) {
                 jString = jString.substring(1);
             }
             commandMap = objectMapper.readValue(jString, HashMap.class);
@@ -224,7 +225,7 @@ public class CommandEventLogic {
                         command = commandMap
                         result = checkRule()
                         return result
-                    
+
                     def getDeviceGroupName(groupNumber)
                         if device is None:
                             return None
@@ -246,12 +247,12 @@ public class CommandEventLogic {
                         return command.get(commandParameter)
 
                     def conditionsNotMet():
-                        return ";;"
+                        return ""
 
                     def conditionsMetWithCommand(measurement, value, commandTarget, command):
                         if value is None:
-                            return config.deviceEui + ";" + measurement + ";;" + commandTarget + ";" + command
-                        return config.deviceEui + ";" + measurement + ";" + str(value) + ";" + commandTarget + ";" + command
+                            return device.EUI + ";" + measurement + ";;" + commandTarget + ";" + command
+                        return device.EUI + ";" + measurement + ";" + str(value) + ";" + commandTarget + ";" + command
 
                     def newCommand(commandTarget, command):
                         if commandTarget is None or command is None:
@@ -263,7 +264,7 @@ public class CommandEventLogic {
                     #    if v1 is None:
                     #        return conditionsNotMet()
                     #    cmdString = "{\"command\": \"" + str(v1) + "\", \"value\": \"" + str(getCommandParam('value')) + "\"}"
-                    #    return conditionsMetWithCommand("", None, config.deviceEui, cmdString)
+                    #    return conditionsMetWithCommand("", None, device.EUI, cmdString)
 
                     """;
             script = script + config.script;
@@ -285,22 +286,27 @@ public class CommandEventLogic {
                 // logger.info("pResult asInt: " + pResult.asInt());
                 // result.violated = pResult.asInt() > 0;
                 String scriptResult = pResult.toString();
-                String[] scriptResultArr = scriptResult.split(";");
-                result.violated = scriptResultArr[1].length() > 0 && scriptResultArr[2].length() > 0;
-                if(scriptResultArr.length < 3) {
+                String[] scriptResultArr = scriptResult.split(";", -1);
+
+                if (scriptResultArr.length < 2) {
+                    result.error = false;
+                    result.errorMessage = "";
+                    return result;
+                } else if (scriptResultArr.length < 3) {
                     logger.warn("Invalid script result: " + scriptResult);
                     result.error = true;
                     result.errorMessage = "Invalid script result: " + scriptResult;
                     return result;
                 }
+                result.violated = scriptResultArr[1].length() > 0 && scriptResultArr[2].length() > 0;
                 if (result.violated) {
                     logger.info("Script result: " + scriptResult);
-                    
+
                     result.eui = scriptResultArr[0];
                     result.measurement = scriptResultArr[1];
-                    try{
+                    try {
                         result.value = Double.parseDouble(scriptResultArr[2]);
-                    }catch (NumberFormatException e) {
+                    } catch (NumberFormatException e) {
                         result.value = null;
                     }
                 }
@@ -328,7 +334,5 @@ public class CommandEventLogic {
         }
         return result;
     }
-
-
 
 }

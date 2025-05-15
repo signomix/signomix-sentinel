@@ -15,20 +15,12 @@ import javax.script.ScriptEngineFactory;
 import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
 
-import org.eclipse.microprofile.config.inject.ConfigProperty;
-import org.eclipse.microprofile.reactive.messaging.Channel;
-import org.eclipse.microprofile.reactive.messaging.Emitter;
-import org.jboss.logging.Logger;
-import org.jboss.logmanager.handlers.SyslogHandler.SyslogType;
 import org.python.core.PyException;
 import org.python.core.PyObject;
 import org.python.util.PythonInterpreter;
 
 import com.signomix.common.Tag;
 import com.signomix.common.db.IotDatabaseException;
-import com.signomix.common.db.IotDatabaseIface;
-import com.signomix.common.db.SentinelDaoIface;
-import com.signomix.common.db.SignalDaoIface;
 import com.signomix.common.iot.Device;
 import com.signomix.common.iot.DeviceGroup;
 import com.signomix.common.iot.LastDataPair;
@@ -36,69 +28,94 @@ import com.signomix.common.iot.sentinel.AlarmCondition;
 import com.signomix.common.iot.sentinel.SentinelConfig;
 import com.signomix.common.iot.sentinel.Signal;
 
-import io.agroal.api.AgroalDataSource;
-import io.quarkus.agroal.DataSource;
-import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.event.Observes;
-import jakarta.inject.Inject;
 
 @ApplicationScoped
-public class DataEventLogic {
+public class DataEventLogic extends EventLogic {
 
-    @Inject
-    Logger logger;
-
-    @Inject
-    @DataSource("oltp")
-    AgroalDataSource tsDs;
-
-    @Inject
-    @DataSource("olap")
-    AgroalDataSource olapDs;
-
-    SentinelDaoIface sentinelDao;
-    IotDatabaseIface olapDao;
-    SignalDaoIface signalDao;
-    IotDatabaseIface oltpDao;
-
-    @Inject
-    SignalLogic sentinelLogic;
-
-    @Inject
-    @Channel("alerts")
-    Emitter<String> alertEmitter;
-
-    @ConfigProperty(name = "signomix.signals.used", defaultValue = "false")
-    Boolean signalsUsed;
-
-    void onStart(@Observes StartupEvent ev) {
-        sentinelDao = new com.signomix.common.tsdb.SentinelDao();
-        sentinelDao.setDatasource(tsDs);
-        olapDao = new com.signomix.common.tsdb.IotDatabaseDao();
-        olapDao.setDatasource(olapDs);
-        signalDao = new com.signomix.common.tsdb.SignalDao();
-        signalDao.setDatasource(tsDs);
-        oltpDao = new com.signomix.common.tsdb.IotDatabaseDao();
-        oltpDao.setDatasource(tsDs);
-    }
+    /*
+     * @Inject
+     * Logger logger;
+     * 
+     * @Inject
+     * 
+     * @DataSource("oltp")
+     * AgroalDataSource tsDs;
+     * 
+     * @Inject
+     * 
+     * @DataSource("olap")
+     * AgroalDataSource olapDs;
+     * 
+     * SentinelDaoIface sentinelDao;
+     * IotDatabaseIface olapDao;
+     * SignalDaoIface signalDao;
+     * IotDatabaseIface oltpDao;
+     * 
+     * @Inject
+     * SignalLogic sentinelLogic;
+     * 
+     * @Inject
+     * 
+     * @Channel("alerts")
+     * Emitter<String> alertEmitter;
+     * 
+     * @ConfigProperty(name = "signomix.signals.used", defaultValue = "false")
+     * Boolean signalsUsed;
+     * 
+     * @Inject
+     * Vertx vertx;
+     * 
+     * @PostConstruct
+     * void onConstructed() {
+     * logger.info("DataEventLogic created");
+     * sentinelDao = new com.signomix.common.tsdb.SentinelDao();
+     * sentinelDao.setDatasource(tsDs);
+     * olapDao = new com.signomix.common.tsdb.IotDatabaseDao();
+     * olapDao.setDatasource(olapDs);
+     * signalDao = new com.signomix.common.tsdb.SignalDao();
+     * signalDao.setDatasource(tsDs);
+     * oltpDao = new com.signomix.common.tsdb.IotDatabaseDao();
+     * oltpDao.setDatasource(tsDs);
+     * }
+     */
 
     /**
      * Handles the event of data being received from a device.
      * Finds all sentinel definitions related to the device and checks alert
      * conditions for each one.
      * 
-     * @param deviceEui the EUI of the device that sent the data
+     * @param eui the EUI of the device that sent the data
      */
-    public void handleDataReceivedEvent(String deviceEui) {
-        // logger.info("Handling data received event: " + deviceEui);
+/*     @Override
+    public void handleEvent(int type, String eui, String commandString, String messageId) {
+        //logger.info("Handling data received event: " + eui);
         // testJsInterpreter(deviceEui);
         // testPythonInterpreter(deviceEui);
+        String deviceEui = null;
+        String command = commandString;
+        String jsonString = null;
+        if (command.startsWith("&") || command.startsWith("#")) {
+            command = command.substring(1);
+        }
+        String[] commandParts = command.split(";", -1);
+        if (type == EventLogic.EVENT_TYPE_COMMAND && commandParts.length < 2) {
+            logger.error("Invalid command: " + command);
+            return;
+        }
+
         String tag = "";
         String tagValue = "";
         String[] groups = new String[0];
+        if (type == EventLogic.EVENT_TYPE_COMMAND) {
+            deviceEui = commandParts[0];
+            jsonString = commandParts[1];
+        } else {
+            deviceEui = eui;
+        }
+        Device device = null;
         try {
-            Device device = olapDao.getDevice(deviceEui, false);
+            device = olapDao.getDevice(deviceEui, false);
             List<Tag> tags = olapDao.getDeviceTags(deviceEui);
             logger.info("tags: " + deviceEui + " " + tags.size());
             if (tags.size() > 0) {
@@ -111,12 +128,14 @@ public class DataEventLogic {
         } catch (IotDatabaseException e) {
             // TODO Auto-generated catch block
             e.printStackTrace();
+            logger.error(e.getMessage());
+            return;
         }
 
         HashMap<Long, SentinelConfig> configs = new HashMap<>();
         // find all sentinel definitions related to the device
         try {
-            List<SentinelConfig> configList = sentinelDao.getConfigsByDevice(deviceEui, 1000, 0, SentinelConfig.EVENT_TYPE_DATA);
+            List<SentinelConfig> configList = sentinelDao.getConfigsByDevice(deviceEui, 1000, 0, type);
             for (SentinelConfig config : configList) {
                 configs.put(config.id, config);
             }
@@ -128,7 +147,7 @@ public class DataEventLogic {
         }
         if (!tag.isEmpty() && !tagValue.isEmpty()) {
             try {
-                List<SentinelConfig> tagConfigs = sentinelDao.getConfigsByTag(tag, tagValue, 1000, 0, SentinelConfig.EVENT_TYPE_DATA);
+                List<SentinelConfig> tagConfigs = sentinelDao.getConfigsByTag(tag, tagValue, 1000, 0, type);
                 logger.info("Number of sentinel configs for tag: " + deviceEui + " " + tag + ":" + tagValue + " "
                         + tagConfigs.size());
                 for (SentinelConfig config : tagConfigs) {
@@ -146,7 +165,7 @@ public class DataEventLogic {
                 if (groupName.isEmpty()) {
                     continue;
                 }
-                List<SentinelConfig> groupConfigs = sentinelDao.getConfigsByGroup(groups[i].trim(), 1000, 0, SentinelConfig.EVENT_TYPE_DATA);
+                List<SentinelConfig> groupConfigs = sentinelDao.getConfigsByGroup(groups[i].trim(), 1000, 0, type);
                 for (SentinelConfig config : groupConfigs) {
                     configs.put(config.id, config);
                 }
@@ -166,9 +185,9 @@ public class DataEventLogic {
             if (!config.active) {
                 continue;
             }
-            runSentinelCheck(config, deviceEui);
+            runSentinelCheck(messageId, config, device, jsonString);
         }
-    }
+    } */
 
     /**
      * Runs a sentinel check for the given SentinelConfig.
@@ -177,7 +196,8 @@ public class DataEventLogic {
      * @param deviceEui the EUI of the device that sent the data which triggered the
      *                  check
      */
-    private void runSentinelCheck(SentinelConfig config, String deviceEui) {
+    @Override
+    void runSentinelCheck(String messageId, SentinelConfig config, Device device, String jsonString) {
         logger.info("Running sentinel check for config: " + config.id);
         // In the map, key==deviceEui, value==(map of {columnName:channel}) where
         // columnName is d1, d2, ..., d24
@@ -186,7 +206,7 @@ public class DataEventLogic {
             if (config.checkOthers) {
                 deviceChannelMap = sentinelDao.getDeviceChannelsByConfigId(config.id);
             } else {
-                deviceChannelMap = sentinelDao.getDeviceChannelsByConfigAndEui(config.id, deviceEui);
+                deviceChannelMap = sentinelDao.getDeviceChannelsByConfigAndEui(config.id, device.getEUI());
             }
         } catch (IotDatabaseException e) {
             e.printStackTrace();
@@ -197,7 +217,7 @@ public class DataEventLogic {
             logger.info("No devices found for sentinel: " + config.id);
             return;
         }
-        checkSentinelRelatedData(config, deviceChannelMap, deviceEui);
+        checkSentinelRelatedData(config, deviceChannelMap, device.getEUI());
     }
 
     private void checkSentinelRelatedData(SentinelConfig config, Map deviceChannelMap, String eui) {
@@ -211,7 +231,7 @@ public class DataEventLogic {
             boolean configConditionsMet = false; // true if at least one device meets the conditions
             for (List deviceParamsAndValues : values) {
                 String deviceEui = ((LastDataPair) deviceParamsAndValues.get(0)).eui;
-                try{
+                try {
                     device = olapDao.getDevice(deviceEui, false);
                 } catch (IotDatabaseException e) {
                     logger.error("Error while getting device: " + deviceEui);
@@ -262,6 +282,10 @@ public class DataEventLogic {
         }
     }
 
+    private void test(ConditionResult conditionResult) {
+
+    }
+
     /**
      * Runs a query on the given SentinelConfig and values map to check if the
      * conditions are met.
@@ -283,7 +307,26 @@ public class DataEventLogic {
 
         if (config.useScript && config.script != null && !config.script.isEmpty()) {
             logger.info("Running script : " + config.script);
-            return runPythonScript(config, device, deviceChannelMap, values);
+            // return runPythonScript(config, device, deviceChannelMap, values);
+            vertx.<ConditionResult>executeBlocking(promise -> {
+                try {
+                    // Perform blocking operation (e.g., Jython)
+                    ConditionResult result2 = runPythonScript(config, device, deviceChannelMap, values);
+                    promise.complete(result2);
+                } catch (Exception e) {
+                    promise.fail(e);
+                }
+            }, res -> {
+                if (res.succeeded()) {
+                    ConditionResult result3 = res.result();
+                    // Handle the result
+                    logger.info("Python script executed successfully (2): " + result3);
+                    test(result3);
+                } else {
+                    logger.error("Error executing Python script (2)", res.cause());
+                }
+            });
+            return result;
         }
 
         try {
@@ -588,18 +631,20 @@ public class DataEventLogic {
                         global channelMap
                         channelMap = deviceChannelMap
                         result = ""
-
+                        javaLogger.info("Running Python script for sentinel: " + str(config.id))
                         result = checkRule()
                         return result
 
                     def conditionsMetWithCommand(measurement, value, commandTarget, command):
-                        return config.deviceEui + ";" + measurement + ";" + str(value) + ";" + commandTarget + ";" + command
-                    
+                        return device.EUI + ";" + measurement + ";" + str(value) + ";" + commandTarget + ";" + command
+
                     def conditionsMet(measurement, value):
-                        return config.deviceEui + ";" + measurement + ";" + str(value)
+                        javaLogger.info("Conditions met for measurement: " + measurement + " value: " + str(value))
+                        return device.EUI + ";" + measurement + ";" + str(value)
 
                     def conditionsNotMet():
-                        return ";;"
+                        javaLogger.info("Conditions not met")
+                        return ""
 
                     #def checkRule():
                     #    v1 = getValue("temperature")
@@ -621,6 +666,7 @@ public class DataEventLogic {
                 interpreter.set("device_obj", device);
                 interpreter.set("values", values);
                 interpreter.set("deviceChannelMap", deviceChannelMap);
+                interpreter.set("javaLogger", logger);
                 // Execute the Jython script
                 interpreter.exec(script);
                 // Call the Python function and get the result
@@ -634,15 +680,26 @@ public class DataEventLogic {
                 result.violated = scriptResult.length() > 0;
 
                 logger.info("Script result: " + scriptResult);
-                String[] scriptResultArr = scriptResult.split(";");
-                result.eui = scriptResultArr[0].trim();
-                result.violated = result.eui.length() > 0;
-                result.measurement = scriptResultArr[1].trim();
-                try {
-                    result.value = Double.parseDouble(scriptResultArr[2]);
-                } catch (Exception e) {
-                    logger.debug("Error parsing value: " + scriptResultArr[2]);
-                    result.value = null;
+                String[] scriptResultArr = scriptResult.split(";", -1);
+                if (scriptResultArr.length < 2) {
+                    result.error = false;
+                    result.errorMessage = "";
+                    return result;
+                } else if (scriptResultArr.length < 3) {
+                    logger.error("Script result is not valid: " + scriptResult);
+                    result.error = true;
+                    result.errorMessage = "Script result is not valid: " + scriptResult;
+                    return result;
+                } else {
+                    result.eui = scriptResultArr[0].trim();
+                    result.violated = result.eui.length() > 0;
+                    result.measurement = scriptResultArr[1].trim();
+                    try {
+                        result.value = Double.parseDouble(scriptResultArr[2]);
+                    } catch (Exception e) {
+                        logger.debug("Error parsing value: " + scriptResultArr[2]);
+                        result.value = null;
+                    }
                 }
                 if (scriptResultArr.length == 5) {
                     result.commandTarget = scriptResultArr[3].trim();
@@ -866,9 +923,15 @@ public class DataEventLogic {
         result = result.replaceAll("\\{tag.value\\}", config.tagValue);
         result = result.replaceAll("\\{device.eui\\}", device.getEUI());
         result = result.replaceAll("\\{device.name\\}", device.getName());
-        result = result.replaceAll("\\{var\\}", violationResult.measurement);
-        result = result.replaceAll("\\{measurement\\}", violationResult.measurement);
-        result = result.replaceAll("\\{value\\}", violationResult.value.toString());
+
+        if (violationResult.measurement != null) {
+            result = result.replaceAll("\\{measurement\\}", violationResult.measurement);
+            result = result.replaceAll("\\{var\\}", violationResult.measurement);
+        }
+        if (violationResult.value != null) {
+            result = result.replaceAll("\\{value\\}", violationResult.value.toString());
+        }
+
         return result;
     }
 
