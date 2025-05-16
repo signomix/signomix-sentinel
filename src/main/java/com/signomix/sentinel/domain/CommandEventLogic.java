@@ -1,7 +1,6 @@
 package com.signomix.sentinel.domain;
 
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -10,9 +9,9 @@ import org.python.core.PyObject;
 import org.python.util.PythonInterpreter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.signomix.common.Tag;
 import com.signomix.common.db.IotDatabaseException;
 import com.signomix.common.iot.Device;
+import com.signomix.common.iot.LastDataPair;
 import com.signomix.common.iot.sentinel.SentinelConfig;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -20,189 +19,12 @@ import jakarta.enterprise.context.ApplicationScoped;
 @ApplicationScoped
 public class CommandEventLogic extends EventLogic {
 
-/*     @Inject
-    Logger logger;
-
-    @Inject
-    @DataSource("oltp")
-    AgroalDataSource tsDs;
-
-    @Inject
-    @DataSource("olap")
-    AgroalDataSource olapDs;
-
-    SentinelDaoIface sentinelDao;
-    IotDatabaseIface olapDao;
-    SignalDaoIface signalDao;
-    IotDatabaseIface oltpDao;
-
-    @Inject
-    SignalLogic sentinelLogic;
-
-    // @Inject
-    // @Channel("command-created")
-    // Emitter<String> commandCreatedEmitter;
-
-    @ConfigProperty(name = "signomix.signals.used", defaultValue = "false")
-    Boolean signalsUsed;
-
-    @Inject
-    Vertx vertx;
-
-    @PostConstruct
-    void onConstructed() {
-        sentinelDao = new com.signomix.common.tsdb.SentinelDao();
-        sentinelDao.setDatasource(tsDs);
-        olapDao = new com.signomix.common.tsdb.IotDatabaseDao();
-        olapDao.setDatasource(olapDs);
-        signalDao = new com.signomix.common.tsdb.SignalDao();
-        signalDao.setDatasource(tsDs);
-        oltpDao = new com.signomix.common.tsdb.IotDatabaseDao();
-        oltpDao.setDatasource(tsDs);
-    } */
-
-
-    /**
-     * Handles the event of data being received from a device.
-     * Finds all sentinel definitions related to the device and checks alert
-     * conditions for each one.
-     * 
-     * @param commandString the EUI of the device that sent the data
-     */
     @Override
-    public void handleEvent(int type, String eui, String commandString, String messageId) {
-        // logger.info("Handling data received event: " + deviceEui);
-        // testJsInterpreter(deviceEui);
-        // testPythonInterpreter(deviceEui);
-        String deviceEui = null;
-        String command = commandString;
-        String jsonString = null;
-        if (command.startsWith("&") || command.startsWith("#")) {
-            command = command.substring(1);
-        }
-        String[] commandParts = command.split(";", -1);
-        if (type == EventLogic.EVENT_TYPE_COMMAND && commandParts.length < 2) {
-            logger.error("Invalid command: " + command);
-            return;
-        }
-
-        String tag = "";
-        String tagValue = "";
-        String[] groups = new String[0];
-        if (type == EventLogic.EVENT_TYPE_COMMAND) {
-            deviceEui = commandParts[0];
-            jsonString = commandParts[1];
-        } else {
-            deviceEui = eui;
-        }
-        Device device = null;
-
-        logger.info("Command received: " + deviceEui + " " + jsonString);
-        try {
-            device = olapDao.getDevice(deviceEui, false);
-            List<Tag> tags = olapDao.getDeviceTags(deviceEui);
-            logger.info("tags: " + deviceEui + " " + tags.size());
-            if (tags.size() > 0) {
-                // TODO: handle multiple tags
-                logger.info("tag: " + tags.get(0).name + " " + tags.get(0).value);
-                tag = tags.get(0).name;
-                tagValue = tags.get(0).value;
-            }
-            groups = device.getGroups().split(",");
-        } catch (IotDatabaseException e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
-            logger.error(e.getMessage());
-            return;
-        }
-
-        HashMap<Long, SentinelConfig> configs = new HashMap<>();
-        // find all sentinel definitions related to the device
-        try {
-            List<SentinelConfig> configList = sentinelDao.getConfigsByDevice(deviceEui, 1000, 0, type);
-            for (SentinelConfig config : configList) {
-                configs.put(config.id, config);
-            }
-        } catch (IotDatabaseException e) {
-            logger.error(e.getMessage());
-            e.printStackTrace();
-            // TODO: inform user/admin about error
-            return;
-        }
-        if (!tag.isEmpty() && !tagValue.isEmpty()) {
-            try {
-                List<SentinelConfig> tagConfigs = sentinelDao.getConfigsByTag(tag, tagValue, 1000, 0, type);
-                logger.info("Number of sentinel configs for tag: " + deviceEui + " " + tag + ":" + tagValue + " "
-                        + tagConfigs.size());
-                for (SentinelConfig config : tagConfigs) {
-                    configs.put(config.id, config);
-                }
-            } catch (IotDatabaseException e) {
-                logger.error(e.getMessage());
-                e.printStackTrace();
-            }
-        }
-        try {
-            String groupName;
-            for (int i = 0; i < groups.length; i++) {
-                groupName = groups[i].trim();
-                if (groupName.isEmpty()) {
-                    continue;
-                }
-                List<SentinelConfig> groupConfigs = sentinelDao.getConfigsByGroup(groups[i].trim(), 1000, 0, type);
-                for (SentinelConfig config : groupConfigs) {
-                    configs.put(config.id, config);
-                }
-                groupConfigs.clear();
-            }
-        } catch (IotDatabaseException e) {
-            logger.error(e.getMessage());
-            e.printStackTrace();
-        }
-
-        // check alert conditions for each sentinel definition from configs map
-        logger.info("Number of sentinel configs: " + deviceEui + " " + configs.size());
-        Iterator it = configs.entrySet().iterator();
-        while (it.hasNext()) {
-            Map.Entry pair = (Map.Entry) it.next();
-            SentinelConfig config = (SentinelConfig) pair.getValue();
-            if (!config.active) {
-                continue;
-            }
-            runSentinelCheck(messageId, config, device, jsonString);
-        }
+    void checkSentinelRelatedData(String messageId, SentinelConfig config, Map deviceChannelMap, String eui) {
     }
 
-    /**
-     * Runs a sentinel check for the given SentinelConfig.
-     * 
-     * @param config    SentinelConfig to use for the check
-     * @param deviceEui the EUI of the device that sent the data which triggered the
-     *                  check
-     */
     @Override
-    void runSentinelCheck(String messageid, SentinelConfig config, Device device, String jsonString) {
-        logger.info("Running sentinel check for config: " + config.id);
-        if (config.useScript && config.script != null && !config.script.isEmpty()) {
-            logger.info("Running script : " + config.script);
-            ConditionResult result = runPythonScript(config, device, jsonString);
-            if (result.command != null && result.commandTarget != null) {
-                try {
-                    logger.info("Command: " + result.command);
-                    logger.info("Command target: " + result.commandTarget);
-                    oltpDao.putDeviceCommand(result.commandTarget, "ACTUATOR_CMD", result.command,
-                            System.currentTimeMillis());
-                    // mqtt message about created command will not be send to prevent loops
-                } catch (IotDatabaseException e) {
-                    e.printStackTrace();
-                    logger.error(e.getMessage());
-                }
-            }
-        }
-
-    }
-
-    private ConditionResult runPythonScript(SentinelConfig config, Device device, String jsonString) {
+    ConditionResult runPythonScript(SentinelConfig config, Device device, String jsonString) {
         ConditionResult result = new ConditionResult();
         long startTime = System.currentTimeMillis();
         HashMap<String, Object> commandMap;
@@ -333,6 +155,12 @@ public class CommandEventLogic extends EventLogic {
             result.errorMessage = e.getMessage();
         }
         return result;
+    }
+
+    @Override
+    ConditionResult runPythonScript(SentinelConfig config, Device device, Map deviceChannelMap,
+            List<List<LastDataPair>> values) {
+        return null;
     }
 
 }

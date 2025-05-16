@@ -40,6 +40,8 @@ public class SentinelLogic {
     IotDatabaseIface oltpDao;
     OrganizationDao organizationDao;
 
+    private static final long DEFAULT_ORGANIZATION_ID = 1;
+
     void onStart(@Observes StartupEvent ev) {
         sentinelDao = new com.signomix.common.tsdb.SentinelDao();
         sentinelDao.setDatasource(tsDs);
@@ -64,8 +66,13 @@ public class SentinelLogic {
 
     public List<SentinelConfig> getSentinelConfigs(User user, int limit, int offset) {
         List<SentinelConfig> configs = new ArrayList<>();
+        long organizationId = user.organization;
         try {
-            configs = sentinelDao.getConfigs(user.uid, limit, offset, SentinelConfig.EVENT_TYPE_ANY);
+            if(organizationId> DEFAULT_ORGANIZATION_ID){
+                configs = sentinelDao.getOrganizationConfigs(organizationId, limit, offset, SentinelConfig.EVENT_TYPE_ANY);
+            } else {
+                configs = sentinelDao.getConfigs(user.uid, limit, offset, SentinelConfig.EVENT_TYPE_ANY);
+            }
         } catch (Exception e) {
             e.printStackTrace();
             logger.error(e.getMessage());

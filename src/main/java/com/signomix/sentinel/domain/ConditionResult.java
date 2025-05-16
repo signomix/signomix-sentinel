@@ -10,4 +10,6 @@ public class ConditionResult {
     public String errorMessage = "";
     public String commandTarget = null;
     public String command = null;
+    public Long configId = null;
+    //public String messageId = null;
 }
