@@ -120,6 +120,8 @@ public class DeviceEventLogic {
     }
 
     private void testPythonInterpreter(String groupEui) {
+        PythonInterpreter interpreter = null;
+        PyObject pResult = null;
         try {
             String script = """
                     def process_java_object(java_obj):
@@ -130,16 +132,23 @@ public class DeviceEventLogic {
                         result = java_obj.upper()
                         return result
                     """;
-            PythonInterpreter interpreter = new PythonInterpreter();
+            interpreter = new PythonInterpreter();
             interpreter.set("java_obj", "Hello "+groupEui);
             // Execute the Jython script
             interpreter.exec(script);
 
             // Call the Python function and get the result
-            PyObject result = interpreter.eval("process_java_object(java_obj)");
-            logger.info("Result: " + result);
+            pResult = interpreter.eval("process_java_object(java_obj)");
+            logger.info("Result: " + pResult);
         } catch (Exception e) {
             e.printStackTrace();
-        }
+        } finally {
+                if (null != interpreter) {
+                    interpreter.close();
+                }
+                if (null != pResult) {
+                    pResult = null;
+                }
+            }
     }
 }

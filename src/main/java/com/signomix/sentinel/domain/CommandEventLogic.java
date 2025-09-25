@@ -9,7 +9,6 @@ import org.python.core.PyObject;
 import org.python.util.PythonInterpreter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.signomix.common.db.IotDatabaseException;
 import com.signomix.common.iot.Device;
 import com.signomix.common.iot.LastDataPair;
 import com.signomix.common.iot.sentinel.SentinelConfig;
@@ -81,14 +80,17 @@ public class CommandEventLogic extends EventLogic {
                             return conditionsNotMet()
                         return ";;;" + commandTarget + ";" + command
 
-                    #def checkRule():
-                    #    v1 = getCommandParam("status")
-                    #    if v1 is None:
-                    #        return conditionsNotMet()
-                    #    cmdString = "{\"command\": \"" + str(v1) + "\", \"value\": \"" + str(getCommandParam('value')) + "\"}"
-                    #    return conditionsMetWithCommand("", None, device.EUI, cmdString)
-
+                    # see def checkRule() below for example
                     """;
+            /*
+            def checkRule():
+                v1 = getCommandParam("status")
+                if v1 is None:
+                    return conditionsNotMet()
+                cmdString = "{\"command\": \"" + str(v1) + "\", \"value\": \"" + str(getCommandParam('value')) + "\"}"
+                return conditionsMetWithCommand("", None, device.EUI, cmdString)
+             */
+                    
             script = script + config.script;
             logger.info("\n" + script);
             PythonInterpreter interpreter = null;
@@ -144,6 +146,9 @@ public class CommandEventLogic extends EventLogic {
             } finally {
                 if (null != interpreter) {
                     interpreter.close();
+                }
+                if (null != pResult) {
+                    pResult = null;
                 }
             }
             long endTime = System.currentTimeMillis();

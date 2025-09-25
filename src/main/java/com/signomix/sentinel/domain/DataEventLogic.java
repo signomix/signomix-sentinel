@@ -19,11 +19,9 @@ import org.python.util.PythonInterpreter;
 
 import com.signomix.common.db.IotDatabaseException;
 import com.signomix.common.iot.Device;
-import com.signomix.common.iot.DeviceGroup;
 import com.signomix.common.iot.LastDataPair;
 import com.signomix.common.iot.sentinel.AlarmCondition;
 import com.signomix.common.iot.sentinel.SentinelConfig;
-import com.signomix.common.iot.sentinel.Signal;
 
 import jakarta.enterprise.context.ApplicationScoped;
 
@@ -202,7 +200,7 @@ public class DataEventLogic extends EventLogic {
                     }
                     // Double tmpValue
                     Double hysteresis = Math.abs(config.hysteresis);
-                    Double valueToCheck=null;
+                    Double valueToCheck = null;
                     Double diff;
                     if (condition.condition1 == AlarmCondition.CONDITION_GREATER) {
                         for (int j = 0; j < valuesList.size(); j++) {
@@ -347,7 +345,7 @@ public class DataEventLogic extends EventLogic {
                             conditionsMet = conditionsMet || actualConditionMet;
                         }
                     }
-                    if(conditionsMet){
+                    if (conditionsMet) {
                         result.measurement = condition.measurement;
                         result.value = valueToCheck;
                     }
@@ -522,6 +520,9 @@ public class DataEventLogic extends EventLogic {
             } finally {
                 if (null != interpreter) {
                     interpreter.close();
+                }
+                if (null != pResult) {
+                    pResult = null;
                 }
             }
             long endTime = System.currentTimeMillis();
