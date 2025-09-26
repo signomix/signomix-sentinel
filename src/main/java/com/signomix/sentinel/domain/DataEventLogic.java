@@ -206,6 +206,9 @@ public class DataEventLogic extends EventLogic {
                         for (int j = 0; j < valuesList.size(); j++) {
                             valueToCheck = valuesList.get(j).value;
                             diff = valuesList.get(j).delta;
+                            if (diff == null) {
+                                diff = 0.0;
+                            }
                             logger.info("VALUE: " + valueToCheck);
                             if (diff > 0) {
                                 actualConditionMet = actualConditionMet
@@ -220,6 +223,9 @@ public class DataEventLogic extends EventLogic {
                         for (int j = 0; j < valuesList.size(); j++) {
                             valueToCheck = valuesList.get(j).value;
                             diff = valuesList.get(j).delta;
+                            if (diff == null) {
+                                diff = 0.0;
+                            }
                             logger.info("VALUE: " + valueToCheck);
                             if (diff < 0) {
                                 actualConditionMet = actualConditionMet
@@ -235,6 +241,9 @@ public class DataEventLogic extends EventLogic {
                         for (int j = 0; j < valuesList.size(); j++) {
                             valueToCheck = valuesList.get(j).value;
                             diff = valuesList.get(j).delta;
+                            if (diff == null) {
+                                diff = 0.0;
+                            }
                             logger.info("VALUE: " + valueToCheck + " diff: " + diff + " value1: " + condition.value1);
                             if (diff != 0) {
                                 actualConditionMet = actualConditionMet
@@ -246,6 +255,9 @@ public class DataEventLogic extends EventLogic {
                         for (int j = 0; j < valuesList.size(); j++) {
                             valueToCheck = valuesList.get(j).value;
                             diff = valuesList.get(j).delta;
+                            if (diff == null) {
+                                diff = 0.0;
+                            }
                             logger.info("VALUE: " + valueToCheck + " diff: " + diff + " value1: " + condition.value1);
                             if (diff != 0) {
                                 actualConditionMet = actualConditionMet
@@ -258,6 +270,9 @@ public class DataEventLogic extends EventLogic {
                             for (int j = 0; j < valuesList.size(); j++) {
                                 valueToCheck = valuesList.get(j).value;
                                 diff = valuesList.get(j).delta;
+                                if (diff == null) {
+                                    diff = 0.0;
+                                }
                                 logger.info("VALUE: " + valueToCheck);
                                 if (diff > 0) {
                                     if (condition.logic == 1) {
@@ -282,6 +297,9 @@ public class DataEventLogic extends EventLogic {
                             for (int j = 0; j < valuesList.size(); j++) {
                                 valueToCheck = valuesList.get(j).value;
                                 diff = valuesList.get(j).delta;
+                                if (diff == null) {
+                                    diff = 0.0;
+                                }
                                 logger.info("VALUE: " + valueToCheck);
                                 if (diff < 0) {
                                     if (condition.logic == 1) {
@@ -306,6 +324,9 @@ public class DataEventLogic extends EventLogic {
                             for (int j = 0; j < valuesList.size(); j++) {
                                 valueToCheck = valuesList.get(j).value;
                                 diff = valuesList.get(j).delta;
+                                if (diff == null) {
+                                    diff = 0.0;
+                                }
                                 logger.info("VALUE: " + valueToCheck);
                                 if (diff != 0) {
                                     if (condition.logic == 1) {
@@ -321,6 +342,9 @@ public class DataEventLogic extends EventLogic {
                             for (int j = 0; j < valuesList.size(); j++) {
                                 valueToCheck = valuesList.get(j).value;
                                 diff = valuesList.get(j).delta;
+                                if (diff == null) {
+                                    diff = 0.0;
+                                }
                                 logger.info("VALUE: " + valueToCheck);
                                 if (diff != 0) {
                                     if (condition.logic == 1) {
