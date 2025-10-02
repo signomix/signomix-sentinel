@@ -1,0 +1,35 @@
+{
+    "id": 226,
+    "active": true,
+    "name": "Przekroczenie temperatury docelowej",
+    "deviceEui": "",
+    "groupEui": "DKHS_ROOMS",
+    "tagName": "",
+    "tagValue": "",
+    "alertLevel": 2,
+    "team": "support_rsf",
+    "administrators": "",
+    "conditions": [
+        {
+            "conditionOperator": null,
+            "measurement": "temperature",
+            "condition1": 1,
+            "value1": 25,
+            "orOperator": false,
+            "logic": 1,
+            "condition2": -1,
+            "value2": null
+        }
+    ],
+    "userId": "support_rsf",
+    "organizationId": 158,
+    "everyTime": false,
+    "alertMessage": "TEST Temperatura w pokoju {device.name} ({device.eui}) większa o 3  st. od zadanej.",
+    "conditionOk": true,
+    "conditionOkMessage": "Temperatura w pokoju {device.name} ({device.eui}) OK",
+    "timeShift": 1,
+    "hysteresis": 0,
+    "useScript": true,
+    "script": "def checkRule():\n    diff = 3\n    temperature = getValue(\"temperature\")\n    temperature_target = getValue(\"temperature_target\")\n    if temperature is None or temperature_target is None:\n        return conditionsNotMet()\n    if temperature - temperature_target >= diff:\n        return conditionsMet(\"temperature\", temperature)\n    return conditionsNotMet()",
+    "eventType": 0
+}

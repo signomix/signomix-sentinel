@@ -131,10 +131,132 @@ public abstract class EventLogic {
             return;
         }
 
+        /*
+         * HashMap<Long, SentinelConfig> configs = new HashMap<>();
+         * // find all sentinel definitions related to the device
+         * try {
+         * List<SentinelConfig> configList = sentinelDao.getConfigsByDevice(deviceEui,
+         * 1000, 0, type);
+         * for (SentinelConfig config : configList) {
+         * if (config.active) {
+         * configs.put(config.id, config);
+         * }
+         * }
+         * } catch (IotDatabaseException e) {
+         * logger.error(e.getMessage());
+         * e.printStackTrace();
+         * // TODO: inform user/admin about error
+         * return;
+         * }
+         * if (!tag.isEmpty() && !tagValue.isEmpty()) {
+         * try {
+         * List<SentinelConfig> tagConfigs = sentinelDao.getConfigsByTag(tag, tagValue,
+         * 1000, 0, type);
+         * logger.info("Number of sentinel configs for tag: " + deviceEui + " " + tag +
+         * ":" + tagValue + " "
+         * + tagConfigs.size());
+         * for (SentinelConfig config : tagConfigs) {
+         * if (config.active) {
+         * configs.put(config.id, config);
+         * }
+         * }
+         * } catch (IotDatabaseException e) {
+         * logger.error(e.getMessage());
+         * e.printStackTrace();
+         * }
+         * }
+         * try {
+         * String groupName;
+         * for (int i = 0; i < groups.length; i++) {
+         * groupName = groups[i].trim();
+         * if (groupName.isEmpty()) {
+         * continue;
+         * }
+         * List<SentinelConfig> groupConfigs =
+         * sentinelDao.getConfigsByGroup(groups[i].trim(), 1000, 0, type);
+         * for (SentinelConfig config : groupConfigs) {
+         * if (config.active) {
+         * configs.put(config.id, config);
+         * }
+         * }
+         * groupConfigs.clear();
+         * }
+         * } catch (IotDatabaseException e) {
+         * logger.error(e.getMessage());
+         * e.printStackTrace();
+         * }
+         */
+        HashMap<Long, SentinelConfig> configs = getConfigs(type, deviceEui, tag, tagValue, groups, type);
+        if (configs == null || configs.isEmpty()) {
+            logger.info("No sentinel configs found for device: " + deviceEui);
+            return;
+        }
+
+        messageConfigs.put(messageId, configs);
+
+        // check alert conditions for each sentinel definition from configs map
+        logger.info("Number of sentinel configs: " + deviceEui + " " + configs.size());
+        Iterator it = configs.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry pair = (Map.Entry) it.next();
+            SentinelConfig config = (SentinelConfig) pair.getValue();
+            if (!config.active) {
+                continue;
+            }
+            runSentinelCheckForConfig(messageId, config, device, jsonString, null);
+        }
+    }
+
+    public void handleEvent(int type, String[] messageArray, String messageId) {
+        String deviceEui = messageArray[0];
+
+        String tag = "";
+        String tagValue = "";
+        String[] groups = new String[0];
+        Device device = null;
+        try {
+            device = olapDao.getDevice(deviceEui, false);
+            List<Tag> tags = olapDao.getDeviceTags(deviceEui);
+            logger.info("tags: " + deviceEui + " " + tags.size());
+            if (tags.size() > 0) {
+                // TODO: handle multiple tags
+                logger.info("tag: " + tags.get(0).name + " " + tags.get(0).value);
+                tag = tags.get(0).name;
+                tagValue = tags.get(0).value;
+            }
+            groups = device.getGroups().split(",");
+        } catch (IotDatabaseException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+            logger.error(e.getMessage());
+            return;
+        }
+        HashMap<Long, SentinelConfig> configs = getConfigs(type, deviceEui, tag, tagValue, groups, type);
+        if (configs == null || configs.isEmpty()) {
+            logger.info("No sentinel configs found for device: " + deviceEui);
+            return;
+        }
+        messageConfigs.put(messageId, configs);
+
+        // check alert conditions for each sentinel definition from configs map
+        logger.info("Number of sentinel configs: " + deviceEui + " " + configs.size());
+        Iterator it = configs.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry pair = (Map.Entry) it.next();
+            SentinelConfig config = (SentinelConfig) pair.getValue();
+            if (!config.active) {
+                continue;
+            }
+            runSentinelCheckForConfig(messageId, config, device, null, messageArray);
+        }
+    }
+
+    public HashMap<Long, SentinelConfig> getConfigs(int eventType, String deviceEui, String tag, String tagValue,
+            String[] groups, int configType) {
         HashMap<Long, SentinelConfig> configs = new HashMap<>();
         // find all sentinel definitions related to the device
         try {
-            List<SentinelConfig> configList = sentinelDao.getConfigsByDevice(deviceEui, 1000, 0, type);
+            List<SentinelConfig> configList = sentinelDao.getConfigsByDevice(deviceEui, 1000, 0, eventType);
             for (SentinelConfig config : configList) {
                 if (config.active) {
                     configs.put(config.id, config);
@@ -144,11 +266,11 @@ public abstract class EventLogic {
             logger.error(e.getMessage());
             e.printStackTrace();
             // TODO: inform user/admin about error
-            return;
+            return null;
         }
         if (!tag.isEmpty() && !tagValue.isEmpty()) {
             try {
-                List<SentinelConfig> tagConfigs = sentinelDao.getConfigsByTag(tag, tagValue, 1000, 0, type);
+                List<SentinelConfig> tagConfigs = sentinelDao.getConfigsByTag(tag, tagValue, 1000, 0, eventType);
                 logger.info("Number of sentinel configs for tag: " + deviceEui + " " + tag + ":" + tagValue + " "
                         + tagConfigs.size());
                 for (SentinelConfig config : tagConfigs) {
@@ -168,7 +290,7 @@ public abstract class EventLogic {
                 if (groupName.isEmpty()) {
                     continue;
                 }
-                List<SentinelConfig> groupConfigs = sentinelDao.getConfigsByGroup(groups[i].trim(), 1000, 0, type);
+                List<SentinelConfig> groupConfigs = sentinelDao.getConfigsByGroup(groups[i].trim(), 1000, 0, eventType);
                 for (SentinelConfig config : groupConfigs) {
                     if (config.active) {
                         configs.put(config.id, config);
@@ -180,23 +302,11 @@ public abstract class EventLogic {
             logger.error(e.getMessage());
             e.printStackTrace();
         }
-
-        messageConfigs.put(messageId, configs);
-
-        // check alert conditions for each sentinel definition from configs map
-        logger.info("Number of sentinel configs: " + deviceEui + " " + configs.size());
-        Iterator it = configs.entrySet().iterator();
-        while (it.hasNext()) {
-            Map.Entry pair = (Map.Entry) it.next();
-            SentinelConfig config = (SentinelConfig) pair.getValue();
-            if (!config.active) {
-                continue;
-            }
-            runSentinelCheckForConfig(messageId, config, device, jsonString);
-        }
+        return configs;
     }
 
-    void runSentinelCheckForConfig(String messageId, SentinelConfig config, Device device, String jsonString) {
+    void runSentinelCheckForConfig(String messageId, SentinelConfig config, Device device, String jsonString,
+            String[] messageArray) {
         logger.info("Running sentinel check for config: " + config.id);
 
         if (config.eventType == SentinelConfig.EVENT_TYPE_COMMAND) {
@@ -215,22 +325,25 @@ public abstract class EventLogic {
         // In the map, key==deviceEui, value==(map of {columnName:channel}) where
         // columnName is d1, d2, ..., d24
         Map<String, Map<String, String>> deviceChannelMap = null;
-        try {
-            if (config.checkOthers) {
-                deviceChannelMap = sentinelDao.getDeviceChannelsByConfigId(config.id);
-            } else {
-                deviceChannelMap = sentinelDao.getDeviceChannelsByConfigAndEui(config.id, device.getEUI());
+        if (messageArray.length < 3) {
+            try {
+                if (config.checkOthers) {
+                    deviceChannelMap = sentinelDao.getDeviceChannelsByConfigId(config.id);
+                } else {
+                    deviceChannelMap = sentinelDao.getDeviceChannelsByConfigAndEui(config.id, device.getEUI());
+                }
+            } catch (IotDatabaseException e) {
+                e.printStackTrace();
+                logger.error(e.getMessage());
+                return;
             }
-        } catch (IotDatabaseException e) {
-            e.printStackTrace();
-            logger.error(e.getMessage());
-            return;
+            if (deviceChannelMap == null || deviceChannelMap.isEmpty()) {
+                logger.info("No devices found for sentinel: " + config.id);
+                return;
+            }
         }
-        if (deviceChannelMap == null || deviceChannelMap.isEmpty()) {
-            logger.info("No devices found for sentinel: " + config.id);
-            return;
-        }
-        checkSentinelRelatedData(messageId, config, deviceChannelMap, device.getEUI());
+
+        checkSentinelRelatedData(messageId, config, deviceChannelMap, device.getEUI(), messageArray);
     }
 
     void processResult(String messageId, ConditionResult conditionResult) {
@@ -262,39 +375,43 @@ public abstract class EventLogic {
         } else {
             if (conditionResult.error) {
                 logger.error("Error while processing result: " + conditionResult.errorMessage);
-            }
-            int status = 0;
-            Device device = null;
-            try {
-                status = sentinelDao.getSentinelStatus(config.id);
-                device = oltpDao.getDevice(conditionResult.eui, false);
-            } catch (IotDatabaseException e) {
-                e.printStackTrace();
-                logger.error(e.getMessage());
-            }
-            if (device != null) {
-                if (conditionResult.violated) {
-                    logger.info("Condition violated: " + conditionResult.configId + " " + conditionResult.measurement
-                            + " " + conditionResult.value);
-                    logger.info("Conditions met for sentinel: " + config.id);
-                    if (config.everyTime) {
-                        saveEvent(config, device, conditionResult);
-                    } else {
-                        // check if the event was already saved
-                        if (status <= 0) {
+                saveEvent(config, null, conditionResult);
+            } else {
+                int status = 0;
+                Device device = null;
+                try {
+                    status = sentinelDao.getSentinelStatus(config.id, conditionResult.eui);
+                    device = oltpDao.getDevice(conditionResult.eui, false);
+                } catch (IotDatabaseException e) {
+                    e.printStackTrace();
+                    logger.error(e.getMessage());
+                }
+                if (device != null) {
+                    if (conditionResult.violated) {
+                        logger.info(
+                                "Condition violated: " + conditionResult.configId + " " + conditionResult.measurement
+                                        + " " + conditionResult.value);
+                        logger.info("Conditions met for sentinel: " + config.id);
+                        if (config.everyTime) {
                             saveEvent(config, device, conditionResult);
+                        } else {
+                            // check if the event was already saved
+                            if (status <= 0) {
+                                saveEvent(config, device, conditionResult);
+                            }
+                        }
+                    } else {
+                        logger.info("Condition not violated: " + conditionResult.configId + " "
+                                + conditionResult.measurement + " " + conditionResult.value);
+                        logger.info("Conditions not met for sentinel: " + config.id);
+                        if (status > 0) {
+                            // status changed to 0
+                            saveResetEvent(config, device, conditionResult);
                         }
                     }
                 } else {
-                    logger.info("Condition not violated: "+ conditionResult.configId + " " + conditionResult.measurement + " " + conditionResult.value);
-                    logger.info("Conditions not met for sentinel: " + config.id);
-                    if (status > 0) {
-                        // status changed to 0
-                        saveResetEvent(config, device, conditionResult);
-                    }
+                    logger.error("Device not found: " + conditionResult.eui);
                 }
-            } else {
-                logger.error("Device not found: " + conditionResult.eui);
             }
         }
 
@@ -505,6 +622,38 @@ public abstract class EventLogic {
 
     private void saveEvent(SentinelConfig config, Device device, ConditionResult violationResult) {
         logger.info("Saving event for sentinel: " + config.id);
+        long createdAt = System.currentTimeMillis();
+        if (violationResult.error) {
+            // error occurred, not able to save event properly
+            // send alert to config.team only
+            String[] teamMembers = {};
+            if (config.team != null && !config.team.isEmpty()) {
+                teamMembers = config.team.split(",");
+            }
+            String subject = "script error";
+            for (int i = 0; i < teamMembers.length; i++) {
+                if (teamMembers[i].isEmpty()) {
+                    continue;
+                }
+                sendAlert(
+                        getAlertType(config.alertLevel),
+                        teamMembers[i],
+                        device != null ? device.getEUI() : violationResult.eui,
+                        "script error",
+                        violationResult.errorMessage,
+                        createdAt);
+                saveSignal(
+                        config.alertLevel,
+                        config.id,
+                        config.organizationId,
+                        teamMembers[i],
+                        device != null ? device.getEUI() : violationResult.eui,
+                        subject,
+                        violationResult.errorMessage,
+                        createdAt);
+            }
+            return;
+        }
         DeviceGroup group = null;
         if (config.groupEui != null && !config.groupEui.isEmpty()) {
             try {
@@ -519,7 +668,7 @@ public abstract class EventLogic {
                 violationResult);
 
         String alertType = getAlertType(config.alertLevel);
-        long createdAt = System.currentTimeMillis();
+
         try {
             sentinelDao.addSentinelEvent(config.id, device.getEUI(), config.alertLevel, message,
                     message);
@@ -553,10 +702,13 @@ public abstract class EventLogic {
         }
     }
 
+    abstract ConditionResult runPythonScript(SentinelConfig config, String[] messageArray);
+
     abstract ConditionResult runPythonScript(SentinelConfig config, Device device, String jsonString);
 
-    abstract ConditionResult runPythonScript(SentinelConfig config, Device device, Map deviceChannelMap,
-            List<List<LastDataPair>> values);
+    //abstract ConditionResult runPythonScript(SentinelConfig config, Device device, Map deviceChannelMap,
+    //        List<List<LastDataPair>> values);
 
-    abstract void checkSentinelRelatedData(String messageId, SentinelConfig config, Map deviceChannelMap, String eui);
+    abstract void checkSentinelRelatedData(String messageId, SentinelConfig config, Map deviceChannelMap, String eui,
+            String[] messageArray);
 }

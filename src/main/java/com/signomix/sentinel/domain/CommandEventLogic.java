@@ -19,7 +19,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 public class CommandEventLogic extends EventLogic {
 
     @Override
-    void checkSentinelRelatedData(String messageId, SentinelConfig config, Map deviceChannelMap, String eui) {
+    void checkSentinelRelatedData(String messageId, SentinelConfig config, Map deviceChannelMap, String eui, String[] messageArray) {
     }
 
     @Override
@@ -162,10 +162,16 @@ public class CommandEventLogic extends EventLogic {
         return result;
     }
 
-    @Override
+/*     @Override
     ConditionResult runPythonScript(SentinelConfig config, Device device, Map deviceChannelMap,
             List<List<LastDataPair>> values) {
         return null;
+    } */
+
+    @Override
+    ConditionResult runPythonScript(SentinelConfig config, String[] messageArray) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'runPythonScript'");
     }
 
 }

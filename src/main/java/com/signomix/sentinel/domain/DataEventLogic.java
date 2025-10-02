@@ -1,6 +1,7 @@
 package com.signomix.sentinel.domain;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,7 +18,6 @@ import org.python.core.PyException;
 import org.python.core.PyObject;
 import org.python.util.PythonInterpreter;
 
-import com.signomix.common.db.IotDatabaseException;
 import com.signomix.common.iot.Device;
 import com.signomix.common.iot.LastDataPair;
 import com.signomix.common.iot.sentinel.AlarmCondition;
@@ -29,59 +29,20 @@ import jakarta.enterprise.context.ApplicationScoped;
 public class DataEventLogic extends EventLogic {
 
     @Override
-    void checkSentinelRelatedData(String messageId, SentinelConfig config, Map deviceChannelMap, String eui) {
-        List<List<LastDataPair>> values;
-        logger.info("Checking sentinel related data for sentinel: " + config.id);
-        ConditionResult result = new ConditionResult();
-        Device device = null;
-        try {
-            values = sentinelDao.getLastValuesOfDevices(deviceChannelMap.keySet(), config.timeShift * 60);
-            logger.info(config.id + " number of values: " + values.size());
-            boolean configConditionsMet = false; // true if at least one device meets the conditions
-            for (List deviceParamsAndValues : values) {
-                String deviceEui = ((LastDataPair) deviceParamsAndValues.get(0)).eui;
-                try {
-                    device = olapDao.getDevice(deviceEui, false);
-                } catch (IotDatabaseException e) {
-                    logger.error("Error while getting device: " + deviceEui);
-                    continue;
-                }
-                if (device.getEUI().equalsIgnoreCase(eui)) {
-                    result = runConfigQuery(messageId, config, device, deviceChannelMap, values);
-                    break;
-                }
-                /*
-                 * if (result.error) {
-                 * logger.error("Error while running config query for sentinel: " + config.id);
-                 * saveSignal(-1, config.id, config.organizationId, config.userId, eui,
-                 * "rule error", result.errorMessage, System.currentTimeMillis());
-                 * sendAlert("ALERT", config.userId, eui, "rule error", result.errorMessage,
-                 * System.currentTimeMillis());
-                 * return;
-                 * }
-                 * configConditionsMet = configConditionsMet || result.violated;
-                 */
-            }
-        } catch (IotDatabaseException e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
-            return;
-        }
+    void checkSentinelRelatedData(String messageId, SentinelConfig config, Map deviceChannelMap, String eui,
+            String[] messageArray) {
+        runConfigQuery(messageId, config, messageArray);
     }
 
     /**
      * Runs a query on the given SentinelConfig and values map to check if the
      * conditions are met.
-     * 
-     * @param config           the SentinelConfig to use for the query
-     * @param deviceEui        the EUI of the device that sent the data which
-     *                         triggered the check
-     * @param deviceChannelMap the map of device EUIs and their channels
-     * @param values           the map of measurement values to use for the query
+     * @param messageId    the message ID of the data event
+     * @param config       the SentinelConfig to use for the query
+     * @param messageArray the array of measurement values to use for the query
      * @return
      */
-    private ConditionResult runConfigQuery(String messageId, SentinelConfig config, Device device, Map deviceChannelMap,
-            List<List<LastDataPair>> values) {
+    private ConditionResult runConfigQuery(String messageId, SentinelConfig config, String[] messageArray) {
 
         ConditionResult result = new ConditionResult();
         result.violated = false;
@@ -96,9 +57,9 @@ public class DataEventLogic extends EventLogic {
                 vertx.<ConditionResult>executeBlocking(promise -> {
                     try {
                         // Perform blocking operation (e.g., Jython)
-                        ConditionResult result2 = runPythonScript(config, device, deviceChannelMap, values);
+                        ConditionResult result2 = runPythonScript(config, messageArray);
                         result2.configId = config.id;
-                        result2.eui = device.getEUI();
+                        result2.eui = messageArray[0];
                         promise.complete(result2);
                     } catch (Exception e) {
                         promise.fail(e);
@@ -114,13 +75,12 @@ public class DataEventLogic extends EventLogic {
                 logger.warn("Script is empty");
             }
         } else {
-            logger.info("Checking conditions");
             vertx.<ConditionResult>executeBlocking(promise -> {
                 try {
                     // Perform blocking operation (e.g., Jython)
-                    ConditionResult result2 = checkConditions(config, device, deviceChannelMap, values);
+                    ConditionResult result2 = checkConditions(config, messageArray);
                     result2.configId = config.id;
-                    result2.eui = device.getEUI();
+                    result2.eui = messageArray[0];
                     promise.complete(result2);
                 } catch (Exception e) {
                     promise.fail(e);
@@ -129,15 +89,26 @@ public class DataEventLogic extends EventLogic {
                 if (res.succeeded()) {
                     processResult(messageId, res.result());
                 } else {
-                    logger.error("Error executing Python script (2)", res.cause());
+                    logger.error("Error while checking conditions", res.cause());
                 }
             });
         }
         return result;
     }
 
-    ConditionResult checkConditions(SentinelConfig config, Device device,
-            Map<String, Map<String, String>> deviceChannelMap, List<List<LastDataPair>> values) {
+    private LastDataPair buildDataPair(String eui, String measurementStr) {
+        LastDataPair pair = new LastDataPair(null, null, null);
+        String[] data = measurementStr.split("=");
+        if (data.length == 2) {
+            pair.eui = eui;
+            pair.measurementName = data[0];
+            pair.value = Double.valueOf(data[1]);
+            pair.delta = null;
+        }
+        return pair;
+    }
+
+    ConditionResult checkConditions(SentinelConfig config, String[] messageArray) {
         ConditionResult result = new ConditionResult();
         result.violated = false;
         result.value = null;
@@ -145,22 +116,23 @@ public class DataEventLogic extends EventLogic {
         result.configId = config.id;
         try {
             // TODO: take into account previous values (required for hysteresis)
-
-            logger.info("deviceChannelMap size: " + deviceChannelMap.size());
-            logger.info("conditions: " + config.conditions.size());
             AlarmCondition condition;
             boolean conditionsMet = false;
             List conditions = config.conditions;
             LinkedHashMap<String, Object> conditionMap = new LinkedHashMap();
+            logger.info("conditions: " + config.conditions.size());
             if (conditions != null) {
                 boolean actualConditionMet;
+                Double hysteresis;
                 for (int i = 0; i < conditions.size(); i++) {
                     actualConditionMet = false;
                     if (i > 1) {
                         break;
                     }
-                    logger.info("conditions class: " + conditions.getClass().getName());
-                    logger.info("conditions element class: " + conditions.get(i).getClass().getName());
+                    if (messageArray.length < 3) {
+                        logger.warn(i + " values for rule " + config.id + " not found");
+                        continue;
+                    }
                     conditionMap = (LinkedHashMap<String, Object>) conditions.get(i);
                     condition = new AlarmCondition();
                     condition.measurement = (String) conditionMap.get("measurement");
@@ -175,186 +147,63 @@ public class DataEventLogic extends EventLogic {
                             + condition.condition1 + " " + condition.value1 + " " + condition.orOperator + " "
                             + condition.condition2 + " " + condition.value2);
                     result.measurement = condition.measurement;
-                    // as values holds all measurement values for all devices, we need to get only
-                    // values for the selected measurement (condition.measurement) from all devices
                     ArrayList<LastDataPair> valuesList = new ArrayList<>();
-
-                    int measurementIndex;
                     LastDataPair dataToCheck;
-                    for (int j = 0; j < values.size(); j++) {
-                        // get column index for measurement
-                        Map<String, String> measurementMap = (Map) deviceChannelMap.get(device.getEUI());
-                        String columnNumberStr = measurementMap.get(condition.measurement);
-                        if (columnNumberStr == null || columnNumberStr.isEmpty()) {
-                            logger.info("columnNumberStr is null or empty for measurement: " + condition.measurement);
-                            continue;
-                        }
-                        measurementIndex = Integer.parseInt(columnNumberStr.substring(1));
-                        measurementIndex--; // column numbers start from 1 (name d1), but list indexes start from 0
-                        dataToCheck = (LastDataPair) values.get(j).get(measurementIndex);
+                    for (int j = 2; j < messageArray.length; j++) {
+                        dataToCheck = buildDataPair(messageArray[0], messageArray[j]);
                         valuesList.add(dataToCheck);
                     }
                     if (valuesList.size() == 0) {
                         logger.info(i + " values for " + condition.measurement + " not found");
                         continue;
                     }
-                    // Double tmpValue
-                    Double hysteresis = Math.abs(config.hysteresis);
-                    Double valueToCheck = null;
-                    Double diff;
+                    Double valueToCheck = getValueToCheck(valuesList, condition.measurement);
+                    hysteresis = Math.abs(config.hysteresis);
                     if (condition.condition1 == AlarmCondition.CONDITION_GREATER) {
-                        for (int j = 0; j < valuesList.size(); j++) {
-                            valueToCheck = valuesList.get(j).value;
-                            diff = valuesList.get(j).delta;
-                            if (diff == null) {
-                                diff = 0.0;
-                            }
-                            logger.info("VALUE: " + valueToCheck);
-                            if (diff > 0) {
-                                actualConditionMet = actualConditionMet
-                                        || (valueToCheck.compareTo(condition.value1) > 0);
-                            } else {
-                                actualConditionMet = actualConditionMet
-                                        || (valueToCheck.compareTo(condition.value1 - hysteresis) > 0);
-                            }
-                        }
-                        // ok = value.compareTo(condition.value1) > 0;
+                        actualConditionMet = actualConditionMet
+                                || (valueToCheck.compareTo(condition.value1+hysteresis) > 0);
                     } else if (condition.condition1 == AlarmCondition.CONDITION_LESS) {
-                        for (int j = 0; j < valuesList.size(); j++) {
-                            valueToCheck = valuesList.get(j).value;
-                            diff = valuesList.get(j).delta;
-                            if (diff == null) {
-                                diff = 0.0;
-                            }
-                            logger.info("VALUE: " + valueToCheck);
-                            if (diff < 0) {
-                                actualConditionMet = actualConditionMet
-                                        || (valueToCheck.compareTo(condition.value1) < 0);
-                            } else {
-                                actualConditionMet = actualConditionMet
-                                        || (valueToCheck.compareTo(condition.value1 + hysteresis) < 0);
-                            }
-                        }
-                        // ok = value.compareTo(condition.value1) == 0;
+                        actualConditionMet = actualConditionMet
+                                || (valueToCheck.compareTo(condition.value1-hysteresis) < 0);
                     } else if (condition.condition1 == AlarmCondition.CONDITION_EQUAL) {
-                        logger.info("Checking condition: ==");
-                        for (int j = 0; j < valuesList.size(); j++) {
-                            valueToCheck = valuesList.get(j).value;
-                            diff = valuesList.get(j).delta;
-                            if (diff == null) {
-                                diff = 0.0;
-                            }
-                            logger.info("VALUE: " + valueToCheck + " diff: " + diff + " value1: " + condition.value1);
-                            if (diff != 0) {
-                                actualConditionMet = actualConditionMet
-                                        || (valueToCheck.compareTo(condition.value1) == 0);
-                            }
-                        }
+                        actualConditionMet = actualConditionMet
+                                || (valueToCheck.compareTo(condition.value1) == 0);
                     } else if (condition.condition1 == AlarmCondition.CONDITION_NOT_EQUAL) {
-                        logger.info("Checking condition: !=");
-                        for (int j = 0; j < valuesList.size(); j++) {
-                            valueToCheck = valuesList.get(j).value;
-                            diff = valuesList.get(j).delta;
-                            if (diff == null) {
-                                diff = 0.0;
-                            }
-                            logger.info("VALUE: " + valueToCheck + " diff: " + diff + " value1: " + condition.value1);
-                            if (diff != 0) {
-                                actualConditionMet = actualConditionMet
-                                        || (valueToCheck.compareTo(condition.value1) != 0);
-                            }
-                        }
+                        actualConditionMet = actualConditionMet
+                                || (valueToCheck.compareTo(condition.value1) != 0);
                     }
                     if (condition.logic != null && condition.logic > 0 && condition.value2 != null) {
                         if (condition.condition2 == AlarmCondition.CONDITION_GREATER) {
-                            for (int j = 0; j < valuesList.size(); j++) {
-                                valueToCheck = valuesList.get(j).value;
-                                diff = valuesList.get(j).delta;
-                                if (diff == null) {
-                                    diff = 0.0;
-                                }
-                                logger.info("VALUE: " + valueToCheck);
-                                if (diff > 0) {
-                                    if (condition.logic == 1) {
-                                        actualConditionMet = actualConditionMet
-                                                || (valueToCheck.compareTo(condition.value2) > 0);
-                                    } else {
-                                        actualConditionMet = actualConditionMet
-                                                && (valueToCheck.compareTo(condition.value2) > 0);
-                                    }
-                                } else {
-                                    if (condition.logic == 1) {
-                                        actualConditionMet = actualConditionMet
-                                                || (valueToCheck.compareTo(condition.value2 - hysteresis) > 0);
-                                    } else {
-                                        actualConditionMet = actualConditionMet
-                                                && (valueToCheck.compareTo(condition.value2 - hysteresis) > 0);
-                                    }
-                                }
+                            if (condition.logic == 1) {
+                                actualConditionMet = actualConditionMet
+                                        || (valueToCheck.compareTo(condition.value2+hysteresis) > 0);
+                            } else {
+                                actualConditionMet = actualConditionMet
+                                        && (valueToCheck.compareTo(condition.value2+hysteresis) > 0);
                             }
-                            // ok = ok || value.compareTo(condition.value2) > 0;
                         } else if (condition.condition2 == AlarmCondition.CONDITION_LESS) {
-                            for (int j = 0; j < valuesList.size(); j++) {
-                                valueToCheck = valuesList.get(j).value;
-                                diff = valuesList.get(j).delta;
-                                if (diff == null) {
-                                    diff = 0.0;
-                                }
-                                logger.info("VALUE: " + valueToCheck);
-                                if (diff < 0) {
-                                    if (condition.logic == 1) {
-                                        actualConditionMet = actualConditionMet
-                                                || (valueToCheck.compareTo(condition.value2) < 0);
-                                    } else {
-                                        actualConditionMet = actualConditionMet
-                                                && (valueToCheck.compareTo(condition.value2) < 0);
-                                    }
-                                } else {
-                                    if (condition.logic == 1) {
-                                        actualConditionMet = actualConditionMet
-                                                || (valueToCheck.compareTo(condition.value2 + hysteresis) < 0);
-                                    } else {
-                                        actualConditionMet = actualConditionMet
-                                                && (valueToCheck.compareTo(condition.value2 + hysteresis) < 0);
-                                    }
-                                }
+                            if (condition.logic == 1) {
+                                actualConditionMet = actualConditionMet
+                                        || (valueToCheck.compareTo(condition.value2-hysteresis) < 0);
+                            } else {
+                                actualConditionMet = actualConditionMet
+                                        && (valueToCheck.compareTo(condition.value2-hysteresis) < 0);
                             }
-                            // ok = ok || value.compareTo(condition.value2) < 0;
                         } else if (condition.condition2 == AlarmCondition.CONDITION_EQUAL) {
-                            for (int j = 0; j < valuesList.size(); j++) {
-                                valueToCheck = valuesList.get(j).value;
-                                diff = valuesList.get(j).delta;
-                                if (diff == null) {
-                                    diff = 0.0;
-                                }
-                                logger.info("VALUE: " + valueToCheck);
-                                if (diff != 0) {
-                                    if (condition.logic == 1) {
-                                        actualConditionMet = actualConditionMet
-                                                || (valueToCheck.compareTo(condition.value2) == 0);
-                                    } else {
-                                        actualConditionMet = actualConditionMet
-                                                && (valueToCheck.compareTo(condition.value2) == 0);
-                                    }
-                                }
+                            if (condition.logic == 1) {
+                                actualConditionMet = actualConditionMet
+                                        || (valueToCheck.compareTo(condition.value2) == 0);
+                            } else {
+                                actualConditionMet = actualConditionMet
+                                        && (valueToCheck.compareTo(condition.value2) == 0);
                             }
                         } else if (condition.condition2 == AlarmCondition.CONDITION_NOT_EQUAL) {
-                            for (int j = 0; j < valuesList.size(); j++) {
-                                valueToCheck = valuesList.get(j).value;
-                                diff = valuesList.get(j).delta;
-                                if (diff == null) {
-                                    diff = 0.0;
-                                }
-                                logger.info("VALUE: " + valueToCheck);
-                                if (diff != 0) {
-                                    if (condition.logic == 1) {
-                                        actualConditionMet = actualConditionMet
-                                                || (valueToCheck.compareTo(condition.value2) != 0);
-                                    } else {
-                                        actualConditionMet = actualConditionMet
-                                                && (valueToCheck.compareTo(condition.value2) != 0);
-                                    }
-                                }
+                            if (condition.logic == 1) {
+                                actualConditionMet = actualConditionMet
+                                        || (valueToCheck.compareTo(condition.value2) != 0);
+                            } else {
+                                actualConditionMet = actualConditionMet
+                                        && (valueToCheck.compareTo(condition.value2) != 0);
                             }
                         }
                     }
@@ -374,16 +223,30 @@ public class DataEventLogic extends EventLogic {
                         result.value = valueToCheck;
                     }
                 }
+
             }
             result.violated = conditionsMet;
             return result;
         } catch (Exception e) {
-            logger.error(e.getMessage());
-            e.printStackTrace();
-            result.violated = false;
-            result.error = true;
-            result.errorMessage = e.getMessage();
-            return result;
+            logger.error("Error while checking conditions", e);
+        }
+        return result;
+    }
+
+    /**
+     * Get value to check from the list of values
+     * 
+     * @param valuesList
+     * @param measurement
+     * @return
+     */
+    Double getValueToCheck(List<LastDataPair> valuesList, String measurement) {
+        Predicate<LastDataPair> byMeasurement = p -> p.measurementName.equalsIgnoreCase(measurement);
+        LastDataPair pair = valuesList.stream().filter(byMeasurement).findFirst().orElse(null);
+        if (pair != null) {
+            return pair.value;
+        } else {
+            return null;
         }
     }
 
@@ -393,97 +256,67 @@ public class DataEventLogic extends EventLogic {
     }
 
     @Override
-    ConditionResult runPythonScript(SentinelConfig config, Device device, Map deviceChannelMap,
-            List<List<LastDataPair>> values) {
+    ConditionResult runPythonScript(SentinelConfig config, String[] messageArray) {
         ConditionResult result = new ConditionResult();
+        result.eui = messageArray[0];
         long startTime = System.currentTimeMillis();
         try {
             logger.info("Running Python script for sentinel: " + config.id);
-            logger.info("deviceChannelMap size: " + deviceChannelMap.size());
-            deviceChannelMap.forEach((k, v) -> {
-                logger.info("key: " + k + " value: " + v);
-            });
-            logger.info("values size: " + values.size());
-            logger.info("values: " + values.toString());
+            HashMap<String, Double> values = new HashMap<>();
+            String[] pair;
+            Double value;
+            for (int i = 2; i < messageArray.length; i++) {
+                pair = messageArray[i].split("=");
+                try {
+                    value = Double.parseDouble(pair[1]);
+                    values.put(pair[0], value);
+                } catch (Exception e) {
+                    logger.warn("problem parsing value declaration " + messageArray[i]);
+                }
+            }
             String script = """
-                    def get_measurementIndex(eui, measurement, deviceChannelMap):
-                        measurementIndex = -1
-                        index = -1
-                        javaLogger.info("get_measurementIndex: " + eui + " " + measurement)
-                        deviceChannels = deviceChannelMap.get(eui)
-                        if deviceChannels is not None:
-                            javaLogger.info("deviceChannels: " + str(deviceChannels))
-                            for key, value in deviceChannels.items():
-                                index += 1
-                                if key == measurement:
-                                    measurementIndex = index  #int(value[1:]) -1 # column numbers start from 1 (name d1), but list indexes start from 0
-                                    break
-                            # print measurement index for debugging
-                            print("Measurement index: " + str(measurementIndex))
-                        return measurementIndex
-
-                    def get_value(eui, measurement, values, deviceChannelMap):
-                        measurementIndex = get_measurementIndex(eui, measurement, deviceChannelMap)
-                        if measurementIndex < 0:
-                            return None
-                        for i in range(len(values)):
-                            if values[i][0].eui == eui:
-                                return values[i][measurementIndex].value
-                        return None
-
-                    def get_delta(eui, measurement, values, deviceChannelMap):
-                        measurementIndex = get_measurementIndex(eui, measurement, deviceChannelMap)
-                        if measurementIndex < 0:
-                            return None
-                        for i in range(len(values)):
-                            if values[i][0].eui == eui:
-                                return values[i][measurementIndex].delta
-                        return None
-
                     def getValue(measurement):
-                        measurementIndex = get_measurementIndex(device.EUI, measurement, channelMap)
-                        javaLogger.info("Measurement index ("+measurement+"): " + str(measurementIndex))
-                        if measurementIndex < 0:
-                            return None
-                        for i in range(len(valuesArr)):
-                            if valuesArr[i][0].eui == device.EUI:
-                                return valuesArr[i][measurementIndex].value
-                        return None
+                        return valuesMap[measurement]
 
-                    def process_java_object(config_obj, device_obj, values, deviceChannelMap):
+                    def process_java_object(config_obj, eui, values):
                         global config
                         config = config_obj
-                        global device
-                        device = device_obj
-                        global valuesArr
-                        valuesArr = values
-                        global channelMap
-                        channelMap = deviceChannelMap
+                        global valuesMap
+                        valuesMap = values
+                        global deviceEUI
+                        deviceEUI = eui
                         result = ""
                         javaLogger.info("Running Python script for sentinel: " + str(config.id))
-                        javaLogger.info("valuesArr size: " + str(len(valuesArr)))
-                        result = checkRule()
+                        try:
+                            result = checkRule()
+                        except Exception as e:
+                            result = scriptError("Error in checkRule: "+ str(e))
                         return result
 
                     def conditionsMetWithCommand(measurement, value, commandTarget, command):
-                        return device.EUI + ";" + measurement + ";" + str(value) + ";" + commandTarget + ";" + command
+                        return deviceEUI + ";" + measurement + ";" + str(value) + ";" + commandTarget + ";" + command
 
                     def conditionsMet(measurement, value):
                         javaLogger.info("Conditions met for measurement: " + measurement + " value: " + str(value))
-                        return device.EUI + ";" + measurement + ";" + str(value)
+                        return deviceEUI + ";" + measurement + ";" + str(value)
 
                     def conditionsNotMet():
                         javaLogger.info("Conditions not met")
                         return ""
 
+                    def scriptError(message):
+                        javaLogger.warn("Script error: " + message)
+                        return message
+
                     #def checkRule():
+                    #    result = conditionsNotMet()
                     #    v1 = getValue("temperature")
                     #    v2 = getValue("humidity")
                     #    if v1 is None or v2 is None:
                     #        return conditionsNotMet()
                     #    if v2 - v1 > 10:
                     #        result = conditionsMet("temperature", v1)
-                    #    return conditionsNotMet()
+                    #    return result
 
                     """;
             script = script + config.script;
@@ -493,14 +326,13 @@ public class DataEventLogic extends EventLogic {
             try {
                 interpreter = new PythonInterpreter();
                 interpreter.set("config_obj", config);
-                interpreter.set("device_obj", device);
                 interpreter.set("values", values);
-                interpreter.set("deviceChannelMap", deviceChannelMap);
+                interpreter.set("eui", messageArray[0]);
                 interpreter.set("javaLogger", logger);
                 // Execute the Jython script
                 interpreter.exec(script);
                 // Call the Python function and get the result
-                pResult = interpreter.eval("process_java_object(config_obj,device_obj,values,deviceChannelMap)");
+                pResult = interpreter.eval("process_java_object(config_obj,eui,values)");
 
                 logger.info("pResult: " + pResult.toString());
                 logger.info("pResult type: " + pResult.getType());
@@ -511,6 +343,11 @@ public class DataEventLogic extends EventLogic {
 
                 logger.info("Script result: " + scriptResult);
                 String[] scriptResultArr = scriptResult.split(";", -1);
+                if (scriptResultArr.length == 1 && scriptResultArr[0].startsWith("Script error:")) {
+                    result.error = true;
+                    result.errorMessage = scriptResult;
+                    return result;
+                }
                 if (scriptResultArr.length < 2) {
                     result.error = false;
                     result.errorMessage = "";
@@ -524,10 +361,11 @@ public class DataEventLogic extends EventLogic {
                     result.eui = scriptResultArr[0].trim();
                     result.violated = result.eui.length() > 0;
                     result.measurement = scriptResultArr[1].trim();
+                    result.value = null;
                     try {
                         result.value = Double.parseDouble(scriptResultArr[2]);
                     } catch (Exception e) {
-                        logger.debug("Error parsing value: " + scriptResultArr[2]);
+                        logger.warn("Error parsing value: [" + scriptResultArr[2]+"]");
                         result.value = null;
                     }
                 }
@@ -538,7 +376,12 @@ public class DataEventLogic extends EventLogic {
 
             } catch (PyException e) {
                 e.printStackTrace();
-                logger.error(e.getMessage());
+                logger.error("E1 " + e.getMessage());
+                result.error = true;
+                result.errorMessage = e.getMessage();
+            } catch (Exception e) {
+                e.printStackTrace();
+                logger.error("E2" + e.getMessage());
                 result.error = true;
                 result.errorMessage = e.getMessage();
             } finally {

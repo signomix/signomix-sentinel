@@ -40,7 +40,6 @@ public class MqttClient {
     @Incoming("data-received")
     public void receive(byte[] eui) {
         try {
-            logger.info("Data received: " + eui);
             String messageId = System.currentTimeMillis() + "-" + ThreadLocalRandom.current().nextInt();
             dataEventReceivedPort.receive(eui,messageId);
         } catch (Exception e) {
