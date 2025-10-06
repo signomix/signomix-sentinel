@@ -31,18 +31,29 @@ public class DataEventLogic extends EventLogic {
     @Override
     void checkSentinelRelatedData(String messageId, SentinelConfig config, Map deviceChannelMap, String eui,
             String[] messageArray) {
-        runConfigQuery(messageId, config, messageArray);
+        int deviceRuleStatus = 0;
+        if (messageArray.length > 0) {
+            deviceRuleStatus = getDeviceRuleStatus(config.id, messageArray[0]);
+        } else {
+            deviceRuleStatus = getDeviceRuleStatus(config.id, eui);
+        }
+        runConfigQuery(messageId, config, messageArray, deviceRuleStatus);
     }
 
     /**
      * Runs a query on the given SentinelConfig and values map to check if the
      * conditions are met.
+     * 
      * @param messageId    the message ID of the data event
      * @param config       the SentinelConfig to use for the query
      * @param messageArray the array of measurement values to use for the query
+     * @param deviceRuleStatus status of the device before processing the current event
+     *                        (=0 - not registered yet, >0 - alert registered [1..5],
+     *                        <0 - alert unregistered [-1..-5])
      * @return
      */
-    private ConditionResult runConfigQuery(String messageId, SentinelConfig config, String[] messageArray) {
+    private ConditionResult runConfigQuery(String messageId, SentinelConfig config, String[] messageArray,
+            int deviceRuleStatus) {
 
         ConditionResult result = new ConditionResult();
         result.violated = false;
@@ -50,14 +61,25 @@ public class DataEventLogic extends EventLogic {
         result.measurement = "";
         result.configId = config.id;
 
+        /*
+         * //int deviceRuleStatus = 0;
+         * if (messageArray.length > 0) {
+         * String eui = messageArray[0];
+         * //deviceRuleStatus = getDeviceRuleStatus(config.id, eui);
+         * logger.info("Device rule status for " + eui + " and rule " + config.id +
+         * " is " + deviceRuleStatus);
+         * } else {
+         * logger.warn("No values in message array");
+         * return result;
+         * }
+         */
+
         if (config.useScript) {
             if (config.script != null && !config.script.isEmpty()) {
-                logger.info("Running script : " + config.script);
-                // return runPythonScript(config, device, deviceChannelMap, values);
                 vertx.<ConditionResult>executeBlocking(promise -> {
                     try {
                         // Perform blocking operation (e.g., Jython)
-                        ConditionResult result2 = runPythonScript(config, messageArray);
+                        ConditionResult result2 = runPythonScript(config, messageArray, deviceRuleStatus);
                         result2.configId = config.id;
                         result2.eui = messageArray[0];
                         promise.complete(result2);
@@ -66,7 +88,7 @@ public class DataEventLogic extends EventLogic {
                     }
                 }, res -> {
                     if (res.succeeded()) {
-                        processResult(messageId, res.result());
+                        processResult(messageId, res.result(), deviceRuleStatus);
                     } else {
                         logger.error("Error executing Python script (2)", res.cause());
                     }
@@ -78,7 +100,7 @@ public class DataEventLogic extends EventLogic {
             vertx.<ConditionResult>executeBlocking(promise -> {
                 try {
                     // Perform blocking operation (e.g., Jython)
-                    ConditionResult result2 = checkConditions(config, messageArray);
+                    ConditionResult result2 = checkConditions(config, messageArray, deviceRuleStatus);
                     result2.configId = config.id;
                     result2.eui = messageArray[0];
                     promise.complete(result2);
@@ -87,7 +109,7 @@ public class DataEventLogic extends EventLogic {
                 }
             }, res -> {
                 if (res.succeeded()) {
-                    processResult(messageId, res.result());
+                    processResult(messageId, res.result(), deviceRuleStatus);
                 } else {
                     logger.error("Error while checking conditions", res.cause());
                 }
@@ -108,19 +130,26 @@ public class DataEventLogic extends EventLogic {
         return pair;
     }
 
-    ConditionResult checkConditions(SentinelConfig config, String[] messageArray) {
+    /**
+     * Checks the conditions for a given sentinel config and message array.
+     * @param config
+     * @param messageArray
+     * @param deviceRuleStatus status of the device before processing the current event 
+     * (=0 - not registered yet, >0 - alert registered [1..5], <0 - alert unregistered [-1..-5])
+     * @return
+     */
+    ConditionResult checkConditions(SentinelConfig config, String[] messageArray, int deviceRuleStatus) {
         ConditionResult result = new ConditionResult();
         result.violated = false;
         result.value = null;
         result.measurement = "";
         result.configId = config.id;
         try {
-            // TODO: take into account previous values (required for hysteresis)
             AlarmCondition condition;
             boolean conditionsMet = false;
             List conditions = config.conditions;
             LinkedHashMap<String, Object> conditionMap = new LinkedHashMap();
-            logger.info("conditions: " + config.conditions.size());
+            logger.debug("conditions: " + config.conditions.size());
             if (conditions != null) {
                 boolean actualConditionMet;
                 Double hysteresis;
@@ -143,7 +172,7 @@ public class DataEventLogic extends EventLogic {
                     condition.orOperator = (Boolean) conditionMap.get("orOperator"); // deprecated
                     condition.logic = (Integer) conditionMap.get("logic");
                     condition.conditionOperator = (Integer) conditionMap.get("conditionOperator");
-                    logger.info("condition:  " + condition.conditionOperator + " " + condition.measurement + ", "
+                    logger.debug("condition:  " + condition.conditionOperator + " " + condition.measurement + ", "
                             + condition.condition1 + " " + condition.value1 + " " + condition.orOperator + " "
                             + condition.condition2 + " " + condition.value2);
                     result.measurement = condition.measurement;
@@ -154,17 +183,22 @@ public class DataEventLogic extends EventLogic {
                         valuesList.add(dataToCheck);
                     }
                     if (valuesList.size() == 0) {
-                        logger.info(i + " values for " + condition.measurement + " not found");
+                        logger.debug(i + " values for " + condition.measurement + " not found");
                         continue;
                     }
                     Double valueToCheck = getValueToCheck(valuesList, condition.measurement);
-                    hysteresis = Math.abs(config.hysteresis);
+                    if(null==valueToCheck){
+                        logger.info(i + " value for " + condition.measurement + " is null");
+                        continue;
+                    }
+                    // hysteresis value is always positive, direction is defined by deviceRuleStatus
+                    hysteresis = Math.abs(config.hysteresis)* (deviceRuleStatus>0?-1:1);
                     if (condition.condition1 == AlarmCondition.CONDITION_GREATER) {
                         actualConditionMet = actualConditionMet
-                                || (valueToCheck.compareTo(condition.value1+hysteresis) > 0);
+                                || (valueToCheck.compareTo(condition.value1 + hysteresis) > 0);
                     } else if (condition.condition1 == AlarmCondition.CONDITION_LESS) {
                         actualConditionMet = actualConditionMet
-                                || (valueToCheck.compareTo(condition.value1-hysteresis) < 0);
+                                || (valueToCheck.compareTo(condition.value1 - hysteresis) < 0);
                     } else if (condition.condition1 == AlarmCondition.CONDITION_EQUAL) {
                         actualConditionMet = actualConditionMet
                                 || (valueToCheck.compareTo(condition.value1) == 0);
@@ -176,18 +210,18 @@ public class DataEventLogic extends EventLogic {
                         if (condition.condition2 == AlarmCondition.CONDITION_GREATER) {
                             if (condition.logic == 1) {
                                 actualConditionMet = actualConditionMet
-                                        || (valueToCheck.compareTo(condition.value2+hysteresis) > 0);
+                                        || (valueToCheck.compareTo(condition.value2 + hysteresis) > 0);
                             } else {
                                 actualConditionMet = actualConditionMet
-                                        && (valueToCheck.compareTo(condition.value2+hysteresis) > 0);
+                                        && (valueToCheck.compareTo(condition.value2 + hysteresis) > 0);
                             }
                         } else if (condition.condition2 == AlarmCondition.CONDITION_LESS) {
                             if (condition.logic == 1) {
                                 actualConditionMet = actualConditionMet
-                                        || (valueToCheck.compareTo(condition.value2-hysteresis) < 0);
+                                        || (valueToCheck.compareTo(condition.value2 - hysteresis) < 0);
                             } else {
                                 actualConditionMet = actualConditionMet
-                                        && (valueToCheck.compareTo(condition.value2-hysteresis) < 0);
+                                        && (valueToCheck.compareTo(condition.value2 - hysteresis) < 0);
                             }
                         } else if (condition.condition2 == AlarmCondition.CONDITION_EQUAL) {
                             if (condition.logic == 1) {
@@ -255,8 +289,18 @@ public class DataEventLogic extends EventLogic {
         return null;
     }
 
+    /**
+     * Runs a Python script for the given sentinel config and message array.
+     * 
+     * @param config
+     * @param messageArray
+     * @param deviceRuleStatus status of the device before processing the current event 
+     *                        (=0 - not registered yet, >0 - alert registered [1..5],
+     *                        <0 - alert unregistered [-1..-5])
+     * @return
+     */
     @Override
-    ConditionResult runPythonScript(SentinelConfig config, String[] messageArray) {
+    ConditionResult runPythonScript(SentinelConfig config, String[] messageArray, int deviceRuleStatus) {
         ConditionResult result = new ConditionResult();
         result.eui = messageArray[0];
         long startTime = System.currentTimeMillis();
@@ -278,15 +322,22 @@ public class DataEventLogic extends EventLogic {
                     def getValue(measurement):
                         return valuesMap[measurement]
 
-                    def process_java_object(config_obj, eui, values):
+                    def process_java_object(config_obj, eui, values, status):
                         global config
                         config = config_obj
                         global valuesMap
                         valuesMap = values
                         global deviceEUI
                         deviceEUI = eui
+                        global deviceStatus
+                        deviceStatus = status
+                        global hysteresis
+                        if(status>0):
+                            hysteresis = abs(config.hysteresis) * -1
+                        else:
+                            hysteresis = abs(config.hysteresis)
                         result = ""
-                        javaLogger.info("Running Python script for sentinel: " + str(config.id))
+                        javaLogger.debug("Running Python script for sentinel: " + str(config.id))
                         try:
                             result = checkRule()
                         except Exception as e:
@@ -297,30 +348,45 @@ public class DataEventLogic extends EventLogic {
                         return deviceEUI + ";" + measurement + ";" + str(value) + ";" + commandTarget + ";" + command
 
                     def conditionsMet(measurement, value):
-                        javaLogger.info("Conditions met for measurement: " + measurement + " value: " + str(value))
+                        javaLogger.debug("Conditions met for measurement: " + measurement + " value: " + str(value))
                         return deviceEUI + ";" + measurement + ";" + str(value)
 
                     def conditionsNotMet():
-                        javaLogger.info("Conditions not met")
+                        javaLogger.debug("Conditions not met")
                         return ""
 
                     def scriptError(message):
                         javaLogger.warn("Script error: " + message)
                         return message
 
+                    ## example 1
                     #def checkRule():
+                    #    diff = 10
                     #    result = conditionsNotMet()
-                    #    v1 = getValue("temperature")
-                    #    v2 = getValue("humidity")
+                    #    measurement1 = "temperature"
+                    #    measurement2 = "humidity"
+                    #    v1 = getValue(measurement1)
+                    #    v2 = getValue(measurement2)
                     #    if v1 is None or v2 is None:
-                    #        return conditionsNotMet()
-                    #    if v2 - v1 > 10:
-                    #        result = conditionsMet("temperature", v1)
+                    #        result conditionsNotMet()
+                    #    if v2 - v1 > diff:
+                    #        result = conditionsMet(measurement1, v1)
                     #    return result
-
+                    ## example 2
+                    #def checkRule():
+                    ## hysteresis is taken from config and its sign depends on deviceStatus
+                    #    threshold = 50
+                    #    measurement = "temperature"
+                    #    result = conditionsNotMet()
+                    #    v1 = getValue(measurement)
+                    #    if v1 is None:
+                    #        result conditionsNotMet()
+                    #    if v > threshold + hysteresis:
+                    #        result = conditionsMet(measurement, v1)
+                    #    return result
                     """;
             script = script + config.script;
-            logger.info("\n" + script);
+            logger.info("\n" + config.script);
             PythonInterpreter interpreter = null;
             PyObject pResult = null;
             try {
@@ -328,16 +394,15 @@ public class DataEventLogic extends EventLogic {
                 interpreter.set("config_obj", config);
                 interpreter.set("values", values);
                 interpreter.set("eui", messageArray[0]);
+                interpreter.set("status", deviceRuleStatus);
                 interpreter.set("javaLogger", logger);
                 // Execute the Jython script
                 interpreter.exec(script);
                 // Call the Python function and get the result
-                pResult = interpreter.eval("process_java_object(config_obj,eui,values)");
+                pResult = interpreter.eval("process_java_object(config_obj,eui,values,status)");
 
-                logger.info("pResult: " + pResult.toString());
-                logger.info("pResult type: " + pResult.getType());
-                // logger.info("pResult asInt: " + pResult.asInt());
-                // result.violated = pResult.asInt() > 0;
+                logger.debug("pResult: " + pResult.toString());
+                logger.debug("pResult type: " + pResult.getType());
                 String scriptResult = pResult.toString();
                 result.violated = scriptResult.length() > 0;
 
@@ -365,7 +430,7 @@ public class DataEventLogic extends EventLogic {
                     try {
                         result.value = Double.parseDouble(scriptResultArr[2]);
                     } catch (Exception e) {
-                        logger.warn("Error parsing value: [" + scriptResultArr[2]+"]");
+                        logger.warn("Error parsing value: [" + scriptResultArr[2] + "]");
                         result.value = null;
                     }
                 }
@@ -448,8 +513,8 @@ public class DataEventLogic extends EventLogic {
             engine.put("x", 10);
 
             try {
-                logger.info("Script result: " + engine.eval(script));
-                logger.info("Result: " + engine.get("result"));
+                logger.debug("Script result: " + engine.eval(script));
+                logger.debug("Result: " + engine.get("result"));
                 // logger.info("Result: " + result);
             } catch (ScriptException e) {
                 e.printStackTrace();

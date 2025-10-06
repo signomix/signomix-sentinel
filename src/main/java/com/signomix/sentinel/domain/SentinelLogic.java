@@ -84,6 +84,9 @@ public class SentinelLogic {
         try {
             config.userId = user.uid;
             config.organizationId = user.organization;
+            if(config.name==null || config.name.isEmpty()){
+                config.name=""+config.id;
+            }
             long id = sentinelDao.addConfig(config);
             config.id = id;
             List<Device> devices = getSentinelDevices(config, config.userId, config.organizationId);
@@ -115,6 +118,9 @@ public class SentinelLogic {
         try {
             SentinelConfig oldConfig = sentinelDao.getConfig(config.id);
             sentinelDao.removeDevices(oldConfig.id);
+            if(config.name==null || config.name.isEmpty()){
+                config.name=""+config.id;
+            }
             sentinelDao.updateConfig(config);
             List<Device> devices = getSentinelDevices(config, config.userId, config.organizationId);
             addSentinelDevices(config, devices);

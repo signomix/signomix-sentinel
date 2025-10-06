@@ -169,7 +169,7 @@ public class CommandEventLogic extends EventLogic {
     } */
 
     @Override
-    ConditionResult runPythonScript(SentinelConfig config, String[] messageArray) {
+    ConditionResult runPythonScript(SentinelConfig config, String[] messageArray, int deviceRuleStatus) {
         // TODO Auto-generated method stub
         throw new UnsupportedOperationException("Unimplemented method 'runPythonScript'");
     }
