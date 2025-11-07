@@ -4,6 +4,7 @@ public class ConditionResult {
     public String measurement=null;
     public Double value=null;
     public boolean violated=false;
+    public boolean failed=false;
     public String eui=null;
     public String condition=null;
     public boolean error = false;

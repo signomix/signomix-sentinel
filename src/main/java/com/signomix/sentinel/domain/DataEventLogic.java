@@ -44,12 +44,14 @@ public class DataEventLogic extends EventLogic {
      * Runs a query on the given SentinelConfig and values map to check if the
      * conditions are met.
      * 
-     * @param messageId    the message ID of the data event
-     * @param config       the SentinelConfig to use for the query
-     * @param messageArray the array of measurement values to use for the query
-     * @param deviceRuleStatus status of the device before processing the current event
-     *                        (=0 - not registered yet, >0 - alert registered [1..5],
-     *                        <0 - alert unregistered [-1..-5])
+     * @param messageId        the message ID of the data event
+     * @param config           the SentinelConfig to use for the query
+     * @param messageArray     the array of measurement values to use for the query
+     * @param deviceRuleStatus status of the device before processing the current
+     *                         event
+     *                         (=0 - not registered yet, >0 - alert registered
+     *                         [1..5],
+     *                         <0 - alert unregistered [-1..-5])
      * @return
      */
     private ConditionResult runConfigQuery(String messageId, SentinelConfig config, String[] messageArray,
@@ -132,10 +134,13 @@ public class DataEventLogic extends EventLogic {
 
     /**
      * Checks the conditions for a given sentinel config and message array.
+     * 
      * @param config
      * @param messageArray
-     * @param deviceRuleStatus status of the device before processing the current event 
-     * (=0 - not registered yet, >0 - alert registered [1..5], <0 - alert unregistered [-1..-5])
+     * @param deviceRuleStatus status of the device before processing the current
+     *                         event
+     *                         (=0 - not registered yet, >0 - alert registered
+     *                         [1..5], <0 - alert unregistered [-1..-5])
      * @return
      */
     ConditionResult checkConditions(SentinelConfig config, String[] messageArray, int deviceRuleStatus) {
@@ -144,6 +149,7 @@ public class DataEventLogic extends EventLogic {
         result.value = null;
         result.measurement = "";
         result.configId = config.id;
+        result.failed = true;
         try {
             AlarmCondition condition;
             boolean conditionsMet = false;
@@ -187,12 +193,13 @@ public class DataEventLogic extends EventLogic {
                         continue;
                     }
                     Double valueToCheck = getValueToCheck(valuesList, condition.measurement);
-                    if(null==valueToCheck){
-                        logger.info(i + " value for " + condition.measurement + " is null");
-                        continue;
+                    if (null == valueToCheck) {
+                        logger.info(
+                                messageArray[0] + " value for " + condition.measurement + "(" + i + ")" + " is null");
+                        break;
                     }
                     // hysteresis value is always positive, direction is defined by deviceRuleStatus
-                    hysteresis = Math.abs(config.hysteresis)* (deviceRuleStatus>0?-1:1);
+                    hysteresis = Math.abs(config.hysteresis) * (deviceRuleStatus > 0 ? -1 : 1);
                     if (condition.condition1 == AlarmCondition.CONDITION_GREATER) {
                         actualConditionMet = actualConditionMet
                                 || (valueToCheck.compareTo(condition.value1 + hysteresis) > 0);
@@ -252,10 +259,11 @@ public class DataEventLogic extends EventLogic {
                             conditionsMet = conditionsMet || actualConditionMet;
                         }
                     }
-                    if (conditionsMet) {
+                    result.failed = false;
+                    //if (conditionsMet) {
                         result.measurement = condition.measurement;
                         result.value = valueToCheck;
-                    }
+                    //}
                 }
 
             }
@@ -263,6 +271,9 @@ public class DataEventLogic extends EventLogic {
             return result;
         } catch (Exception e) {
             logger.error("Error while checking conditions", e);
+            result.error = true;
+            result.errorMessage = e.getMessage();
+            result.failed = true;
         }
         return result;
     }
@@ -294,9 +305,11 @@ public class DataEventLogic extends EventLogic {
      * 
      * @param config
      * @param messageArray
-     * @param deviceRuleStatus status of the device before processing the current event 
-     *                        (=0 - not registered yet, >0 - alert registered [1..5],
-     *                        <0 - alert unregistered [-1..-5])
+     * @param deviceRuleStatus status of the device before processing the current
+     *                         event
+     *                         (=0 - not registered yet, >0 - alert registered
+     *                         [1..5],
+     *                         <0 - alert unregistered [-1..-5])
      * @return
      */
     @Override
@@ -359,6 +372,20 @@ public class DataEventLogic extends EventLogic {
                         javaLogger.warn("Script error: " + message)
                         return message
 
+                    ## example with battery check
+                    #def checkRule():
+                    #    battery_level = getValue("battery")
+                    #    if battery_level is None:
+                    #        return conditionsNotMet()
+                    #    # Sprawdzenie typu danych
+                    #    if not isinstance(battery_level, (int, float)):
+                    #        msg = "Oczekiwano typu 'int' lub 'float' dla poziomu baterii, otrzymano inny: " + str(type(battery_level))
+                    #        javaLogger.info(msg)
+                    #        return conditionsNotMet()
+                    #    if battery_level <= 10:
+                    #        return conditionsMet("battery", battery_level)
+                    #    return conditionsNotMet()
+
                     ## example 1
                     #def checkRule():
                     #    diff = 10
@@ -406,11 +433,12 @@ public class DataEventLogic extends EventLogic {
                 String scriptResult = pResult.toString();
                 result.violated = scriptResult.length() > 0;
 
-                logger.info("Script result: " + scriptResult);
+                logger.info("Script result " + messageArray[0] + ": " + scriptResult);
                 String[] scriptResultArr = scriptResult.split(";", -1);
-                if (scriptResultArr.length == 1 && scriptResultArr[0].startsWith("Script error:")) {
+                if (scriptResultArr[0].startsWith("Script") || scriptResultArr[0].startsWith("Error")) {
                     result.error = true;
                     result.errorMessage = scriptResult;
+                    result.failed = true;
                     return result;
                 }
                 if (scriptResultArr.length < 2) {
@@ -421,6 +449,7 @@ public class DataEventLogic extends EventLogic {
                     logger.error("Script result is not valid: " + scriptResult);
                     result.error = true;
                     result.errorMessage = "Script result is not valid: " + scriptResult;
+                    result.failed = true;
                     return result;
                 } else {
                     result.eui = scriptResultArr[0].trim();
@@ -444,11 +473,13 @@ public class DataEventLogic extends EventLogic {
                 logger.error("E1 " + e.getMessage());
                 result.error = true;
                 result.errorMessage = e.getMessage();
+                result.failed = true;
             } catch (Exception e) {
                 e.printStackTrace();
                 logger.error("E2" + e.getMessage());
                 result.error = true;
                 result.errorMessage = e.getMessage();
+                result.failed = true;
             } finally {
                 if (null != interpreter) {
                     interpreter.close();
@@ -464,6 +495,7 @@ public class DataEventLogic extends EventLogic {
             logger.error(e.getMessage());
             result.error = true;
             result.errorMessage = e.getMessage();
+            result.failed = true;
         }
         return result;
     }
