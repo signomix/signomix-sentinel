@@ -28,6 +28,8 @@ import jakarta.enterprise.context.ApplicationScoped;
 @ApplicationScoped
 public class DataEventLogic extends EventLogic {
 
+    private static final int HEADER_SIZE = 8;
+
     @Override
     void checkSentinelRelatedData(String messageId, SentinelConfig config, Map deviceChannelMap, String eui,
             String[] messageArray) {
@@ -62,19 +64,6 @@ public class DataEventLogic extends EventLogic {
         result.value = null;
         result.measurement = "";
         result.configId = config.id;
-
-        /*
-         * //int deviceRuleStatus = 0;
-         * if (messageArray.length > 0) {
-         * String eui = messageArray[0];
-         * //deviceRuleStatus = getDeviceRuleStatus(config.id, eui);
-         * logger.info("Device rule status for " + eui + " and rule " + config.id +
-         * " is " + deviceRuleStatus);
-         * } else {
-         * logger.warn("No values in message array");
-         * return result;
-         * }
-         */
 
         if (config.useScript) {
             if (config.script != null && !config.script.isEmpty()) {
@@ -164,7 +153,7 @@ public class DataEventLogic extends EventLogic {
                     if (i > 1) {
                         break;
                     }
-                    if (messageArray.length < 3) {
+                    if (messageArray.length < HEADER_SIZE) {
                         logger.warn(i + " values for rule " + config.id + " not found");
                         continue;
                     }
@@ -184,7 +173,7 @@ public class DataEventLogic extends EventLogic {
                     result.measurement = condition.measurement;
                     ArrayList<LastDataPair> valuesList = new ArrayList<>();
                     LastDataPair dataToCheck;
-                    for (int j = 2; j < messageArray.length; j++) {
+                    for (int j = 3; j < messageArray.length; j++) {
                         dataToCheck = buildDataPair(messageArray[0], messageArray[j]);
                         valuesList.add(dataToCheck);
                     }
@@ -322,7 +311,7 @@ public class DataEventLogic extends EventLogic {
             HashMap<String, Double> values = new HashMap<>();
             String[] pair;
             Double value;
-            for (int i = 2; i < messageArray.length; i++) {
+            for (int i = HEADER_SIZE; i < messageArray.length; i++) {
                 pair = messageArray[i].split("=");
                 try {
                     value = Double.parseDouble(pair[1]);

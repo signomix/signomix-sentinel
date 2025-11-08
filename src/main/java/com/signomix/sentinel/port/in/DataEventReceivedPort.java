@@ -20,7 +20,7 @@ public class DataEventReceivedPort {
         String decodedMessage=new String(message);
         logger.info("Data received: " + decodedMessage);
         String[] messageArray=decodedMessage.split(",");
-        if(messageArray.length<1 || (messageArray.length>1 && messageArray.length<3)){
+        if(messageArray.length<1 || (messageArray.length>1 && messageArray.length<9)){
             //invalid message
             logger.warn("Invalid message received: "+decodedMessage);
         }else if(messageArray.length==1){

@@ -210,6 +210,13 @@ public abstract class EventLogic {
 
     public void handleEvent(int type, String[] messageArray, String messageId) {
         String deviceEui = messageArray[0];
+        String organizationIdString = messageArray[1];
+        String deviceName = messageArray[2];
+        String statusStr = messageArray[3];
+        String alertStatusStr = messageArray[4];
+        String latitudeStr = messageArray[5];
+        String longitudeStr = messageArray[6];
+        String altitudeStr = messageArray[7]; 
 
         String tag = "";
         String tagValue = "";
@@ -343,7 +350,7 @@ public abstract class EventLogic {
         // In the map, key==deviceEui, value==(map of {columnName:channel}) where
         // columnName is d1, d2, ..., d24
         Map<String, Map<String, String>> deviceChannelMap = null;
-        if (messageArray.length < 3) {
+        if (messageArray.length < 9) {
             try {
                 if (config.checkOthers) {
                     deviceChannelMap = sentinelDao.getDeviceChannelsByConfigId(config.id);
