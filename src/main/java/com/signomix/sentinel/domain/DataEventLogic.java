@@ -28,7 +28,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 @ApplicationScoped
 public class DataEventLogic extends EventLogic {
 
-    private static final int HEADER_SIZE = 8;
+    private static final int HEADER_SIZE = 9;
 
     @Override
     void checkSentinelRelatedData(String messageId, SentinelConfig config, Map deviceChannelMap, String eui,
@@ -153,7 +153,7 @@ public class DataEventLogic extends EventLogic {
                     if (i > 1) {
                         break;
                     }
-                    if (messageArray.length < HEADER_SIZE) {
+                    if (messageArray.length <= HEADER_SIZE) {
                         logger.warn(i + " values for rule " + config.id + " not found");
                         continue;
                     }
@@ -173,7 +173,7 @@ public class DataEventLogic extends EventLogic {
                     result.measurement = condition.measurement;
                     ArrayList<LastDataPair> valuesList = new ArrayList<>();
                     LastDataPair dataToCheck;
-                    for (int j = 3; j < messageArray.length; j++) {
+                    for (int j = HEADER_SIZE; j < messageArray.length; j++) {
                         dataToCheck = buildDataPair(messageArray[0], messageArray[j]);
                         valuesList.add(dataToCheck);
                     }
