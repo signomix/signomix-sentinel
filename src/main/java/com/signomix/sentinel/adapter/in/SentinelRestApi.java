@@ -7,10 +7,12 @@ import org.jboss.logging.Logger;
 import com.signomix.common.User;
 import com.signomix.common.iot.sentinel.SentinelConfig;
 import com.signomix.sentinel.port.in.AuthPort;
+import com.signomix.sentinel.port.in.DataEventReceivedPort;
 import com.signomix.sentinel.port.in.SentinelPort;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.HeaderParam;
@@ -33,6 +35,9 @@ public class SentinelRestApi {
 
     @Inject
     SentinelPort sentinelPort;
+
+    @Inject
+    DataEventReceivedPort dataEventPort;
 
     @GET
     public Response getSentinelConfigs(@HeaderParam("Authentication") String token, @QueryParam("limit") int limit,
@@ -67,6 +72,28 @@ public class SentinelRestApi {
                 return Response.status(Response.Status.UNAUTHORIZED).build();
             }
             sentinelPort.createConfig(user, config);
+            return Response.ok().build();
+        } catch (Exception e) {
+            logger.error("createSentinelConfig: " + e.getMessage());
+            e.printStackTrace();
+            return Response.status(Response.Status.BAD_REQUEST).entity(e.getMessage()).build();
+        }
+    }
+
+    @POST
+    @Path("/{id}/{eui}")
+    @Consumes("text/csv")
+    public Response test(
+            @HeaderParam("Authentication") String token,
+            @PathParam("id") long id,
+            @PathParam("eui") String eui,
+            String csvData) {
+        try {
+            User user = authPort.getUser(token);
+            if (user == null) {
+                return Response.status(Response.Status.UNAUTHORIZED).build();
+            }
+            dataEventPort.testData(user, eui, id, csvData);
             return Response.ok().build();
         } catch (Exception e) {
             logger.error("createSentinelConfig: " + e.getMessage());

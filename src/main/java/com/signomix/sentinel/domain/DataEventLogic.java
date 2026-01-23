@@ -1,5 +1,6 @@
 package com.signomix.sentinel.domain;
 
+import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -18,6 +19,8 @@ import org.python.core.PyException;
 import org.python.core.PyObject;
 import org.python.util.PythonInterpreter;
 
+import com.signomix.common.User;
+import com.signomix.common.db.IotDatabaseException;
 import com.signomix.common.iot.Device;
 import com.signomix.common.iot.LastDataPair;
 import com.signomix.common.iot.sentinel.AlarmCondition;
@@ -64,26 +67,49 @@ public class DataEventLogic extends EventLogic {
         result.value = null;
         result.measurement = "";
         result.configId = config.id;
-
         if (config.useScript) {
             if (config.script != null && !config.script.isEmpty()) {
-                vertx.<ConditionResult>executeBlocking(promise -> {
-                    try {
-                        // Perform blocking operation (e.g., Jython)
-                        ConditionResult result2 = runPythonScript(config, messageArray, deviceRuleStatus);
-                        result2.configId = config.id;
-                        result2.eui = messageArray[0];
-                        promise.complete(result2);
-                    } catch (Exception e) {
-                        promise.fail(e);
-                    }
-                }, res -> {
-                    if (res.succeeded()) {
-                        processResult(messageId, res.result(), deviceRuleStatus);
-                    } else {
-                        logger.error("Error executing Python script (2)", res.cause());
-                    }
-                });
+                HashMap<String, String> scriptProperties = getScriptProperties(config.script);
+                final Class clazz = getSentinelClass(scriptProperties.get("className"));
+                if (null != clazz) {
+                    vertx.<ConditionResult>executeBlocking(promise -> {
+                        try {
+                            SentinelCustomLogic customLogic = (SentinelCustomLogic) clazz.getDeclaredConstructor()
+                                    .newInstance();
+                            ConditionResult result0 = customLogic.run(config, messageArray, deviceRuleStatus,
+                                    scriptProperties, olapDs, null);
+                            result0.configId = config.id;
+                            result0.eui = messageArray[0];
+                            promise.complete(result0);
+                        } catch (Exception e) {
+                            promise.fail(e);
+                        }
+                    }, res -> {
+                        if (res.succeeded()) {
+                            processResult(messageId, res.result(), deviceRuleStatus);
+                        } else {
+                            logger.error("Error executing custom logic", res.cause());
+                        }
+                    });
+                } else {
+                    vertx.<ConditionResult>executeBlocking(promise -> {
+                        try {
+                            // Perform blocking operation (e.g., Jython)
+                            ConditionResult result2 = runPythonScript(config, messageArray, deviceRuleStatus);
+                            result2.configId = config.id;
+                            result2.eui = messageArray[0];
+                            promise.complete(result2);
+                        } catch (Exception e) {
+                            promise.fail(e);
+                        }
+                    }, res -> {
+                        if (res.succeeded()) {
+                            processResult(messageId, res.result(), deviceRuleStatus);
+                        } else {
+                            logger.error("Error executing Python script (2)", res.cause());
+                        }
+                    });
+                }
             } else {
                 logger.warn("Script is empty");
             }
@@ -107,6 +133,95 @@ public class DataEventLogic extends EventLogic {
             });
         }
         return result;
+    }
+
+    public void testData(User user, String eui, long configID, String csvData) {
+        SentinelConfig sentinelConfig = null;
+        Device device = null;
+        try {
+            sentinelConfig = sentinelDao.getConfig(configID);
+            device = olapDao.getDevice(eui, false);
+        } catch (IotDatabaseException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+            return;
+        }
+        HashMap<String, String> scriptProperties = getScriptProperties(sentinelConfig.script);
+        final Class clazz = getSentinelClass(scriptProperties.get("className"));
+        SentinelCustomLogic customLogic = null;
+        if(null!=clazz){
+            try {
+                customLogic = (SentinelCustomLogic) clazz.getDeclaredConstructor()
+                                        .newInstance();
+            } catch (InstantiationException | IllegalAccessException | IllegalArgumentException
+                    | InvocationTargetException | NoSuchMethodException | SecurityException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+                return;
+            }
+        }
+        if(null!=customLogic){
+            // run custom logic
+            // TODO implement testing logic for custom logic
+            logger.info("Custom logic testing not implemented yet");
+            return;
+        }
+
+        // parse all lines of CSV data
+        String[] lines = csvData.split("\n");
+        for (String line : lines) {
+            String[] messageArray = line.split(",");
+            if (messageArray.length < 1 || (messageArray.length > 1 && messageArray.length < 9)) {
+                // invalid message
+                logger.warn("Invalid message received for testing: " + line);
+            } else {
+                int deviceRuleStatus = getDeviceRuleStatus(sentinelConfig.id, eui);
+                // run test
+                ConditionResult result;
+                if (sentinelConfig.useScript) {
+                    result = runPythonScript(sentinelConfig, messageArray, deviceRuleStatus);
+                } else {
+                    result = checkConditions(sentinelConfig, messageArray, deviceRuleStatus);
+                }
+                // log test result
+                if (result.violated) {
+                    logger.info("Test data for device " + eui + " triggered alert for sentinel config "
+                            + sentinelConfig.id + ": measurement " + result.measurement + " value " + result.value);
+                } else {
+                    logger.info("Test data for device " + eui + " did not trigger alert for sentinel config "
+                            + sentinelConfig.id);
+                }
+            }
+        }
+
+        //TODO implement testing logic
+    }
+
+    private HashMap<String, String> getScriptProperties(String script) {
+        HashMap<String, String> properties = new HashMap<>();
+        String[] lines = script.split("\n");
+        for (String line : lines) {
+            line = line.trim();
+            if (line.startsWith("#")) {
+                line = line.substring(1).trim();
+                String[] keyValue = line.split("=", 2);
+                if (keyValue.length == 2) {
+                    properties.put(keyValue[0].trim(), keyValue[1].trim());
+                }
+            } else {
+                break; // Stop at the first non-comment line
+            }
+        }
+        return properties;
+    }
+
+    private Class getSentinelClass(String className) {
+        try {
+            return Class.forName(className);
+        } catch (ClassNotFoundException e) {
+            logger.error("Sentinel class not found: " + className, e);
+        }
+        return null;
     }
 
     private LastDataPair buildDataPair(String eui, String measurementStr) {
@@ -249,10 +364,10 @@ public class DataEventLogic extends EventLogic {
                         }
                     }
                     result.failed = false;
-                    //if (conditionsMet) {
-                        result.measurement = condition.measurement;
-                        result.value = valueToCheck;
-                    //}
+                    // if (conditionsMet) {
+                    result.measurement = condition.measurement;
+                    result.value = valueToCheck;
+                    // }
                 }
 
             }

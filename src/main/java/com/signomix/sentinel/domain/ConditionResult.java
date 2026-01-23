@@ -13,4 +13,5 @@ public class ConditionResult {
     public String command = null;
     public Long configId = null;
     //public String messageId = null;
+
 }

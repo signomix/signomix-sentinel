@@ -2,6 +2,7 @@ package com.signomix.sentinel.port.in;
 
 import org.jboss.logging.Logger;
 
+import com.signomix.common.User;
 import com.signomix.sentinel.domain.DataEventLogic;
 import com.signomix.sentinel.domain.EventLogic;
 
@@ -30,6 +31,11 @@ public class DataEventReceivedPort {
             dataEventLogic.handleEvent(EventLogic.EVENT_TYPE_DATA, messageArray, messageId);
         }
         
+    }
+
+    public void testData(User user, String eui, long id, String csvData){
+        logger.info("testData for sentinel config: "+id);
+        dataEventLogic.testData(user, eui, id, csvData);
     }
     
 }
