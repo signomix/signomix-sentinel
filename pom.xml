@@ -8,17 +8,17 @@
   <artifactId>signomix-sentinel</artifactId>
   <version>1.0.0</version>
   <properties>
-    <compiler-plugin.version>3.11.0</compiler-plugin.version>
+    <compiler-plugin.version>3.12.1</compiler-plugin.version>
     <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
     <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
-    <quarkus.platform.version>3.5.3</quarkus.platform.version>
+    <quarkus.platform.version>3.36.1</quarkus.platform.version>
     <skipITs>true</skipITs>
-    <surefire-plugin.version>3.1.2</surefire-plugin.version>
+    <surefire-plugin.version>3.2.3</surefire-plugin.version>
     <!-- Select the GraalVM version to use. -->
-    <graalvm.version>22.2.0</graalvm.version>
+    <graalvm.version></graalvm.version>
   </properties>
   <dependencyManagement>
     <dependencies>
@@ -34,15 +34,15 @@
   <dependencies>
     <dependency>
       <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-smallrye-reactive-messaging-mqtt</artifactId>
+      <artifactId>quarkus-messaging-mqtt</artifactId>
     </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-resteasy-reactive-jackson</artifactId>
+      <artifactId>quarkus-rest-jackson</artifactId>
     </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-resteasy-reactive</artifactId>
+      <artifactId>quarkus-rest</artifactId>
     </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>
@@ -50,7 +50,7 @@
     </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-junit5</artifactId>
+      <artifactId>quarkus-junit</artifactId>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -90,7 +90,7 @@
 
     <dependency>
       <groupId>org.graalvm.sdk</groupId>
-      <artifactId>graal-sdk</artifactId>
+      <artifactId>nativeimage</artifactId>
       <version>${graalvm.version}</version>
     </dependency>
     <dependency>
@@ -145,6 +145,7 @@
             <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
             <maven.home>${maven.home}</maven.home>
           </systemPropertyVariables>
+          <argLine>@{argLine}</argLine>
         </configuration>
       </plugin>
       <plugin>
@@ -191,6 +192,9 @@
             </configuration>
           </execution>
         </executions>
+        <configuration>
+          <argLine>@{argLine}</argLine>
+        </configuration>
       </plugin>
     </plugins>
   </build>
@@ -204,7 +208,8 @@
       </activation>
       <properties>
         <skipITs>false</skipITs>
-        <quarkus.package.type>native</quarkus.package.type>
+        <quarkus.native.enabled>true</quarkus.native.enabled>
+        <quarkus.package.jar.enabled>false</quarkus.package.jar.enabled>
       </properties>
     </profile>
   </profiles>
