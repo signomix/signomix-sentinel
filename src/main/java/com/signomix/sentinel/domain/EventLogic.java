@@ -1,15 +1,5 @@
 package com.signomix.sentinel.domain;
 
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-
-import org.eclipse.microprofile.config.inject.ConfigProperty;
-import org.eclipse.microprofile.reactive.messaging.Channel;
-import org.eclipse.microprofile.reactive.messaging.Emitter;
-import org.jboss.logging.Logger;
-
 import com.signomix.common.Tag;
 import com.signomix.common.db.IotDatabaseException;
 import com.signomix.common.db.IotDatabaseIface;
@@ -19,18 +9,26 @@ import com.signomix.common.iot.Device;
 import com.signomix.common.iot.DeviceGroup;
 import com.signomix.common.iot.sentinel.SentinelConfig;
 import com.signomix.common.iot.sentinel.Signal;
-
 import io.agroal.api.AgroalDataSource;
 import io.quarkus.agroal.DataSource;
 import io.quarkus.runtime.StartupEvent;
 import io.vertx.core.Vertx;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.eclipse.microprofile.reactive.messaging.Channel;
+import org.eclipse.microprofile.reactive.messaging.Emitter;
+import org.jboss.logging.Logger;
 
 public abstract class EventLogic {
 
     @Inject
     Logger logger;
+
     @Inject
     @DataSource("oltp")
     AgroalDataSource tsDs;
@@ -63,7 +61,8 @@ public abstract class EventLogic {
 
     private static final long DEFAULT_ORGANIZATION_ID = 1;
 
-    HashMap<String, HashMap<Long, SentinelConfig>> messageConfigs = new HashMap<>();
+    HashMap<String, HashMap<Long, SentinelConfig>> messageConfigs =
+        new HashMap<>();
 
     void onApplicationStart(@Observes StartupEvent e) {
         sentinelDao = new com.signomix.common.tsdb.SentinelDao();
@@ -80,19 +79,27 @@ public abstract class EventLogic {
      * Handles the event of data being received from a device.
      * Finds all sentinel definitions related to the device and checks alert
      * conditions for each one.
-     * 
+     *
      * @param eui           the EUI of the device that sent the data
      * @param commandString the command string received from the device
      * @param messageId     the message ID of the received data
      */
-    public void handleEvent(int type, String eui, String commandString, String messageId) {
+    public void handleEvent(
+        int type,
+        String eui,
+        String commandString,
+        String messageId
+    ) {
         // logger.debug("Handling data received event: " + eui);
         // testJsInterpreter(deviceEui);
         // testPythonInterpreter(deviceEui);
         String deviceEui = null;
         String command = commandString;
         String jsonString = null;
-        if (command != null && (command.startsWith("&") || command.startsWith("#"))) {
+        if (
+            command != null &&
+            (command.startsWith("&") || command.startsWith("#"))
+        ) {
             command = command.substring(1);
         }
         String[] commandParts = {};
@@ -120,7 +127,9 @@ public abstract class EventLogic {
             logger.debug("tags: " + deviceEui + " " + tags.size());
             if (tags.size() > 0) {
                 // TODO: handle multiple tags
-                logger.debug("tag: " + tags.get(0).name + " " + tags.get(0).value);
+                logger.debug(
+                    "tag: " + tags.get(0).name + " " + tags.get(0).value
+                );
                 tag = tags.get(0).name;
                 tagValue = tags.get(0).value;
             }
@@ -187,7 +196,14 @@ public abstract class EventLogic {
          * e.printStackTrace();
          * }
          */
-        HashMap<Long, SentinelConfig> configs = getConfigs(type, deviceEui, tag, tagValue, groups, type);
+        HashMap<Long, SentinelConfig> configs = getConfigs(
+            type,
+            deviceEui,
+            tag,
+            tagValue,
+            groups,
+            type
+        );
         if (configs == null || configs.isEmpty()) {
             logger.debug("No sentinel configs found for device: " + deviceEui);
             return;
@@ -196,7 +212,9 @@ public abstract class EventLogic {
         messageConfigs.put(messageId, configs);
 
         // check alert conditions for each sentinel definition from configs map
-        logger.debug("Number of sentinel configs: " + deviceEui + " " + configs.size());
+        logger.debug(
+            "Number of sentinel configs: " + deviceEui + " " + configs.size()
+        );
         Iterator it = configs.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry pair = (Map.Entry) it.next();
@@ -204,7 +222,13 @@ public abstract class EventLogic {
             if (!config.active) {
                 continue;
             }
-            runSentinelCheckForConfig(messageId, config, device, jsonString, null);
+            runSentinelCheckForConfig(
+                messageId,
+                config,
+                device,
+                jsonString,
+                null
+            );
         }
     }
 
@@ -216,7 +240,7 @@ public abstract class EventLogic {
         String alertStatusStr = messageArray[4];
         String latitudeStr = messageArray[5];
         String longitudeStr = messageArray[6];
-        String altitudeStr = messageArray[7]; 
+        String altitudeStr = messageArray[7];
 
         String tag = "";
         String tagValue = "";
@@ -232,7 +256,9 @@ public abstract class EventLogic {
             logger.debug("tags: " + deviceEui + " " + tags.size());
             if (tags.size() > 0) {
                 // TODO: handle multiple tags
-                logger.debug("tag: " + tags.get(0).name + " " + tags.get(0).value);
+                logger.debug(
+                    "tag: " + tags.get(0).name + " " + tags.get(0).value
+                );
                 tag = tags.get(0).name;
                 tagValue = tags.get(0).value;
             }
@@ -243,7 +269,14 @@ public abstract class EventLogic {
             logger.error(e.getMessage());
             return;
         }
-        HashMap<Long, SentinelConfig> configs = getConfigs(type, deviceEui, tag, tagValue, groups, type);
+        HashMap<Long, SentinelConfig> configs = getConfigs(
+            type,
+            deviceEui,
+            tag,
+            tagValue,
+            groups,
+            type
+        );
         if (configs == null || configs.isEmpty()) {
             logger.debug("No sentinel configs found for device: " + deviceEui);
             return;
@@ -251,7 +284,9 @@ public abstract class EventLogic {
         messageConfigs.put(messageId, configs);
 
         // check alert conditions for each sentinel definition from configs map
-        logger.debug("Number of sentinel configs: " + deviceEui + " " + configs.size());
+        logger.debug(
+            "Number of sentinel configs: " + deviceEui + " " + configs.size()
+        );
         Iterator it = configs.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry pair = (Map.Entry) it.next();
@@ -259,29 +294,61 @@ public abstract class EventLogic {
             if (!config.active) {
                 continue;
             }
-            if (device.getOrganizationId().longValue() != DEFAULT_ORGANIZATION_ID
-                    && config.organizationId.longValue() != device.getOrganizationId().longValue()) {
-                logger.info("Skipping sentinel config for different organization: device org="
-                        + device.getOrganizationId() + " config org=" + config.organizationId);
+            if (
+                device.getOrganizationId().longValue() !=
+                    DEFAULT_ORGANIZATION_ID &&
+                config.organizationId.longValue() !=
+                    device.getOrganizationId().longValue()
+            ) {
+                logger.info(
+                    "Skipping sentinel config for different organization: device org=" +
+                        device.getOrganizationId() +
+                        " config org=" +
+                        config.organizationId
+                );
                 // skip organization sentinels for non organization devices
                 continue;
-            } else if (device.getOrganizationId().longValue() == DEFAULT_ORGANIZATION_ID
-                    && !device.getUserID().equals(config.userId)) {
-                logger.info("Skipping sentinel config for different user: device user="
-                        + device.getUserID() + " config user=" + config.userId);
+            } else if (
+                device.getOrganizationId().longValue() ==
+                    DEFAULT_ORGANIZATION_ID &&
+                !device.getUserID().equals(config.userId)
+            ) {
+                logger.info(
+                    "Skipping sentinel config for different user: device user=" +
+                        device.getUserID() +
+                        " config user=" +
+                        config.userId
+                );
                 // skip default organization sentinels for non script owner devices
                 continue;
             }
-            runSentinelCheckForConfig(messageId, config, device, null, messageArray);
+            runSentinelCheckForConfig(
+                messageId,
+                config,
+                device,
+                null,
+                messageArray
+            );
         }
     }
 
-    public HashMap<Long, SentinelConfig> getConfigs(int eventType, String deviceEui, String tag, String tagValue,
-            String[] groups, int configType) {
+    public HashMap<Long, SentinelConfig> getConfigs(
+        int eventType,
+        String deviceEui,
+        String tag,
+        String tagValue,
+        String[] groups,
+        int configType
+    ) {
         HashMap<Long, SentinelConfig> configs = new HashMap<>();
         // find all sentinel definitions related to the device
         try {
-            List<SentinelConfig> configList = sentinelDao.getConfigsByDevice(deviceEui, 1000, 0, eventType);
+            List<SentinelConfig> configList = sentinelDao.getConfigsByDevice(
+                deviceEui,
+                1000,
+                0,
+                eventType
+            );
             for (SentinelConfig config : configList) {
                 if (config.active) {
                     configs.put(config.id, config);
@@ -295,9 +362,23 @@ public abstract class EventLogic {
         }
         if (!tag.isEmpty() && !tagValue.isEmpty()) {
             try {
-                List<SentinelConfig> tagConfigs = sentinelDao.getConfigsByTag(tag, tagValue, 1000, 0, eventType);
-                logger.debug("Number of sentinel configs for tag: " + deviceEui + " " + tag + ":" + tagValue + " "
-                        + tagConfigs.size());
+                List<SentinelConfig> tagConfigs = sentinelDao.getConfigsByTag(
+                    tag,
+                    tagValue,
+                    1000,
+                    0,
+                    eventType
+                );
+                logger.debug(
+                    "Number of sentinel configs for tag: " +
+                        deviceEui +
+                        " " +
+                        tag +
+                        ":" +
+                        tagValue +
+                        " " +
+                        tagConfigs.size()
+                );
                 for (SentinelConfig config : tagConfigs) {
                     if (config.active) {
                         configs.put(config.id, config);
@@ -315,7 +396,13 @@ public abstract class EventLogic {
                 if (groupName.isEmpty()) {
                     continue;
                 }
-                List<SentinelConfig> groupConfigs = sentinelDao.getConfigsByGroup(groups[i].trim(), 1000, 0, eventType);
+                List<SentinelConfig> groupConfigs =
+                    sentinelDao.getConfigsByGroup(
+                        groups[i].trim(),
+                        1000,
+                        0,
+                        eventType
+                    );
                 for (SentinelConfig config : groupConfigs) {
                     if (config.active) {
                         configs.put(config.id, config);
@@ -330,8 +417,13 @@ public abstract class EventLogic {
         return configs;
     }
 
-    void runSentinelCheckForConfig(String messageId, SentinelConfig config, Device device, String jsonString,
-            String[] messageArray) {
+    void runSentinelCheckForConfig(
+        String messageId,
+        SentinelConfig config,
+        Device device,
+        String jsonString,
+        String[] messageArray
+    ) {
         logger.debug("Running sentinel check for config: " + config.id);
 
         if (config.eventType == SentinelConfig.EVENT_TYPE_COMMAND) {
@@ -353,9 +445,15 @@ public abstract class EventLogic {
         if (messageArray.length < 9) {
             try {
                 if (config.checkOthers) {
-                    deviceChannelMap = sentinelDao.getDeviceChannelsByConfigId(config.id);
+                    deviceChannelMap = sentinelDao.getDeviceChannelsByConfigId(
+                        config.id
+                    );
                 } else {
-                    deviceChannelMap = sentinelDao.getDeviceChannelsByConfigAndEui(config.id, device.getEUI());
+                    deviceChannelMap =
+                        sentinelDao.getDeviceChannelsByConfigAndEui(
+                            config.id,
+                            device.getEUI()
+                        );
                 }
             } catch (IotDatabaseException e) {
                 e.printStackTrace();
@@ -368,10 +466,20 @@ public abstract class EventLogic {
             }
         }
 
-        checkSentinelRelatedData(messageId, config, deviceChannelMap, device.getEUI(), messageArray);
+        checkSentinelRelatedData(
+            messageId,
+            config,
+            deviceChannelMap,
+            device.getEUI(),
+            messageArray
+        );
     }
 
-    void processResult(String messageId, ConditionResult conditionResult, int deviceRuleStatus) {
+    void processResult(
+        String messageId,
+        ConditionResult conditionResult,
+        int deviceRuleStatus
+    ) {
         // From all the configs processed for the messageId, find the one
         // that was used to create the conditionResult
         // deviceRuleStatus is the status of the device before processing the current
@@ -388,17 +496,34 @@ public abstract class EventLogic {
         }
 
         logger.debug("Processing result: " + conditionResult);
-        if(conditionResult.failed){
-            logger.info("Condition "+conditionResult.configId+ " ["+conditionResult.eui+"] evaluation failed: " + conditionResult.errorMessage);
+        if (conditionResult.failed) {
+            logger.info(
+                "Condition " +
+                    conditionResult.configId +
+                    " [" +
+                    conditionResult.eui +
+                    "] evaluation failed: " +
+                    conditionResult.errorMessage
+            );
             return;
         }
 
-        if (conditionResult.command != null && conditionResult.commandTarget != null) {
+        if (
+            conditionResult.command != null &&
+            conditionResult.commandTarget != null
+        ) {
             try {
                 logger.debug("Command: " + conditionResult.command);
-                logger.debug("Command target: " + conditionResult.commandTarget);
-                oltpDao.putDeviceCommand(conditionResult.commandTarget, "ACTUATOR_CMD", conditionResult.command,
-                        System.currentTimeMillis());
+                logger.debug(
+                    "Command target: " + conditionResult.commandTarget
+                );
+                oltpDao.putDeviceCommand(
+                    conditionResult.commandTarget,
+                    "ACTUATOR_CMD",
+                    conditionResult.command,
+                    Long.valueOf(System.currentTimeMillis()),
+                    false
+                );
                 // mqtt message about created command will not be send to prevent loops
             } catch (IotDatabaseException e) {
                 e.printStackTrace();
@@ -406,7 +531,10 @@ public abstract class EventLogic {
             }
         } else {
             if (conditionResult.error || conditionResult.failed) {
-                logger.warn("Error while processing result: " + conditionResult.errorMessage);
+                logger.warn(
+                    "Error while processing result: " +
+                        conditionResult.errorMessage
+                );
                 saveEvent(config, null, conditionResult);
             } else {
                 // int status = 0;
@@ -421,9 +549,16 @@ public abstract class EventLogic {
                 if (device != null) {
                     if (conditionResult.violated) {
                         logger.debug(
-                                "Condition violated: " + conditionResult.configId + " " + conditionResult.measurement
-                                        + " " + conditionResult.value);
-                        logger.debug("Conditions met for sentinel: " + config.id);
+                            "Condition violated: " +
+                                conditionResult.configId +
+                                " " +
+                                conditionResult.measurement +
+                                " " +
+                                conditionResult.value
+                        );
+                        logger.debug(
+                            "Conditions met for sentinel: " + config.id
+                        );
                         if (config.everyTime) {
                             saveEvent(config, device, conditionResult);
                         } else {
@@ -433,9 +568,17 @@ public abstract class EventLogic {
                             }
                         }
                     } else {
-                        logger.debug("Condition not violated: " + conditionResult.configId + " "
-                                + conditionResult.measurement + " " + conditionResult.value);
-                        logger.debug("Conditions not met for sentinel: " + config.id);
+                        logger.debug(
+                            "Condition not violated: " +
+                                conditionResult.configId +
+                                " " +
+                                conditionResult.measurement +
+                                " " +
+                                conditionResult.value
+                        );
+                        logger.debug(
+                            "Conditions not met for sentinel: " + config.id
+                        );
                         if (deviceRuleStatus > 0) {
                             // status changed to 0
                             saveResetEvent(config, device, conditionResult);
@@ -456,13 +599,17 @@ public abstract class EventLogic {
         boolean complete = true;
         for (Map.Entry<Long, SentinelConfig> entry : configs.entrySet()) {
             complete = complete && entry.getValue().processed;
-            logger.debug("Config processed: " + entry.getKey() + " " + entry.getValue().processed);
+            logger.debug(
+                "Config processed: " +
+                    entry.getKey() +
+                    " " +
+                    entry.getValue().processed
+            );
         }
         if (complete) {
             logger.debug("All configs processed for messageId: " + messageId);
             messageConfigs.remove(messageId);
         }
-
     }
 
     protected int getDeviceRuleStatus(Long ruleId, String eui) {
@@ -475,22 +622,62 @@ public abstract class EventLogic {
         return status;
     }
 
-    void sendAlert(String alertType, String userId, String deviceEui, String alertSubject, String alertMessage,
-            long createdAt) {
+    void sendAlert(
+        String alertType,
+        String userId,
+        String deviceEui,
+        String alertSubject,
+        String alertMessage,
+        long createdAt
+    ) {
         if (!signalsUsed) {
             try {
-                oltpDao.addAlert(alertType, deviceEui, userId, alertMessage, createdAt);
+                oltpDao.addAlert(
+                    alertType,
+                    deviceEui,
+                    userId,
+                    alertMessage,
+                    createdAt
+                );
             } catch (IotDatabaseException e) {
                 e.printStackTrace();
             }
         }
-        logger.debug("Sending alert: " + userId + ";" + deviceEui + ";" + alertType + ";" + alertMessage + ";"
-                + alertSubject);
-        alertEmitter.send(userId + "\t" + deviceEui + "\t" + alertType + "\t" + alertMessage + "\t" + alertSubject);
+        logger.debug(
+            "Sending alert: " +
+                userId +
+                ";" +
+                deviceEui +
+                ";" +
+                alertType +
+                ";" +
+                alertMessage +
+                ";" +
+                alertSubject
+        );
+        alertEmitter.send(
+            userId +
+                "\t" +
+                deviceEui +
+                "\t" +
+                alertType +
+                "\t" +
+                alertMessage +
+                "\t" +
+                alertSubject
+        );
     }
 
-    void saveSignal(int alertLevel, long configId, long organizationId, String userId, String deviceEui,
-            String alertSubject, String alertMessage, long createdAt) {
+    void saveSignal(
+        int alertLevel,
+        long configId,
+        long organizationId,
+        String userId,
+        String deviceEui,
+        String alertSubject,
+        String alertMessage,
+        long createdAt
+    ) {
         try {
             Signal signal = new Signal();
             signal.deviceEui = deviceEui;
@@ -547,8 +734,13 @@ public abstract class EventLogic {
         return body;
     }
 
-    String transformMessage(String message, SentinelConfig config,
-            Device device, DeviceGroup group, ConditionResult violationResult) {
+    String transformMessage(
+        String message,
+        SentinelConfig config,
+        Device device,
+        DeviceGroup group,
+        ConditionResult violationResult
+    ) {
         String result = message;
         String targetEui = "";
         String targetName = "";
@@ -561,7 +753,7 @@ public abstract class EventLogic {
         if (config.deviceEui != null && !config.deviceEui.isEmpty()) {
             targetEui = config.deviceEui;
             targetName = deviceName; // in this case configured target is the same as the device that triggered
-                                     // the alert
+            // the alert
         }
         if (config.groupEui != null && !config.groupEui.isEmpty()) {
             targetEui = config.groupEui;
@@ -577,11 +769,20 @@ public abstract class EventLogic {
         result = result.replaceAll("\\{device.name\\}", deviceName);
 
         if (violationResult.measurement != null) {
-            result = result.replaceAll("\\{measurement\\}", violationResult.measurement);
-            result = result.replaceAll("\\{var\\}", violationResult.measurement);
+            result = result.replaceAll(
+                "\\{measurement\\}",
+                violationResult.measurement
+            );
+            result = result.replaceAll(
+                "\\{var\\}",
+                violationResult.measurement
+            );
         }
         if (violationResult.value != null) {
-            result = result.replaceAll("\\{value\\}", violationResult.value.toString());
+            result = result.replaceAll(
+                "\\{value\\}",
+                violationResult.value.toString()
+            );
         }
 
         return result;
@@ -590,7 +791,7 @@ public abstract class EventLogic {
     /**
      * Transforms the team variables {device.team}, {devic.admins}, {device.owner}
      * to a list of user IDs.
-     * 
+     *
      * @param team
      * @param device
      * @return
@@ -616,7 +817,11 @@ public abstract class EventLogic {
         return result;
     }
 
-    private void saveResetEvent(SentinelConfig config, Device device, ConditionResult violationResult) {
+    private void saveResetEvent(
+        SentinelConfig config,
+        Device device,
+        ConditionResult violationResult
+    ) {
         DeviceGroup group = null;
         if (config.groupEui != null && !config.groupEui.isEmpty()) {
             try {
@@ -626,17 +831,28 @@ public abstract class EventLogic {
                 e.printStackTrace();
             }
         }
-        String message = transformMessage(getMessageBody(config.conditionOkMessage), config, device, group,
-                violationResult);
-        String alertSubject = transformMessage(getMessageSubject(config.conditionOkMessage), config, device, group,
-                violationResult);
+        String message = transformMessage(
+            getMessageBody(config.conditionOkMessage),
+            config,
+            device,
+            group,
+            violationResult
+        );
+        String alertSubject = transformMessage(
+            getMessageSubject(config.conditionOkMessage),
+            config,
+            device,
+            group,
+            violationResult
+        );
         try {
             sentinelDao.addSentinelEvent(
-                    config.id,
-                    device != null ? device.getEUI() : "",
-                    (-1 * config.alertLevel),
-                    message,
-                    message);
+                config.id,
+                device != null ? device.getEUI() : "",
+                (-1 * config.alertLevel),
+                message,
+                message
+            );
         } catch (IotDatabaseException e) {
             // TODO Auto-generated catch block
             e.printStackTrace();
@@ -656,21 +872,23 @@ public abstract class EventLogic {
                     continue;
                 }
                 saveSignal(
-                        -1 * config.alertLevel,
-                        config.id,
-                        config.organizationId,
-                        teamMembers[i],
-                        device != null ? device.getEUI() : "",
-                        alertSubject,
-                        message,
-                        createdAt);
+                    -1 * config.alertLevel,
+                    config.id,
+                    config.organizationId,
+                    teamMembers[i],
+                    device != null ? device.getEUI() : "",
+                    alertSubject,
+                    message,
+                    createdAt
+                );
                 sendAlert(
-                        alertType,
-                        teamMembers[i],
-                        device != null ? device.getEUI() : "",
-                        alertSubject,
-                        message,
-                        createdAt);
+                    alertType,
+                    teamMembers[i],
+                    device != null ? device.getEUI() : "",
+                    alertSubject,
+                    message,
+                    createdAt
+                );
             }
         }
         if (config.administrators != null && !config.administrators.isEmpty()) {
@@ -680,26 +898,32 @@ public abstract class EventLogic {
                     continue;
                 }
                 saveSignal(
-                        -1 * config.alertLevel,
-                        config.id,
-                        config.organizationId,
-                        admins[i],
-                        device != null ? device.getEUI() : "",
-                        alertSubject,
-                        message,
-                        createdAt);
+                    -1 * config.alertLevel,
+                    config.id,
+                    config.organizationId,
+                    admins[i],
+                    device != null ? device.getEUI() : "",
+                    alertSubject,
+                    message,
+                    createdAt
+                );
                 sendAlert(
-                    alertType, 
-                    admins[i], 
-                    device!=null ? device.getEUI() : "", 
-                    alertSubject, 
-                    message, 
-                    createdAt);
+                    alertType,
+                    admins[i],
+                    device != null ? device.getEUI() : "",
+                    alertSubject,
+                    message,
+                    createdAt
+                );
             }
         }
     }
 
-    private void saveEvent(SentinelConfig config, Device device, ConditionResult violationResult) {
+    private void saveEvent(
+        SentinelConfig config,
+        Device device,
+        ConditionResult violationResult
+    ) {
         logger.debug("Saving event for sentinel: " + config.id);
         long createdAt = System.currentTimeMillis();
         if (violationResult.error) {
@@ -716,21 +940,23 @@ public abstract class EventLogic {
                     continue;
                 }
                 sendAlert(
-                        getAlertType(config.alertLevel),
-                        teamMembers[i],
-                        device != null ? device.getEUI() : violationResult.eui,
-                        "script error",
-                        violationResult.errorMessage,
-                        createdAt);
+                    getAlertType(config.alertLevel),
+                    teamMembers[i],
+                    device != null ? device.getEUI() : violationResult.eui,
+                    "script error",
+                    violationResult.errorMessage,
+                    createdAt
+                );
                 saveSignal(
-                        config.alertLevel,
-                        config.id,
-                        config.organizationId,
-                        teamMembers[i],
-                        device != null ? device.getEUI() : violationResult.eui,
-                        subject,
-                        violationResult.errorMessage,
-                        createdAt);
+                    config.alertLevel,
+                    config.id,
+                    config.organizationId,
+                    teamMembers[i],
+                    device != null ? device.getEUI() : violationResult.eui,
+                    subject,
+                    violationResult.errorMessage,
+                    createdAt
+                );
             }
             return;
         }
@@ -743,19 +969,31 @@ public abstract class EventLogic {
                 e.printStackTrace();
             }
         }
-        String message = transformMessage(getMessageBody(config.alertMessage), config, device, group, violationResult);
-        String alertSubject = transformMessage(getMessageSubject(config.alertMessage), config, device, group,
-                violationResult);
+        String message = transformMessage(
+            getMessageBody(config.alertMessage),
+            config,
+            device,
+            group,
+            violationResult
+        );
+        String alertSubject = transformMessage(
+            getMessageSubject(config.alertMessage),
+            config,
+            device,
+            group,
+            violationResult
+        );
 
         String alertType = getAlertType(config.alertLevel);
 
         try {
             sentinelDao.addSentinelEvent(
-                    config.id,
-                    device != null ? device.getEUI() : violationResult.eui,
-                    config.alertLevel,
-                    message,
-                    message);
+                config.id,
+                device != null ? device.getEUI() : violationResult.eui,
+                config.alertLevel,
+                message,
+                message
+            );
         } catch (IotDatabaseException e) {
             // TODO Auto-generated catch block
             e.printStackTrace();
@@ -769,21 +1007,23 @@ public abstract class EventLogic {
                     continue;
                 }
                 saveSignal(
-                        config.alertLevel,
-                        config.id,
-                        config.organizationId,
-                        teamMembers[i],
-                        device != null ? device.getEUI() : violationResult.eui,
-                        alertSubject,
-                        message,
-                        createdAt);
+                    config.alertLevel,
+                    config.id,
+                    config.organizationId,
+                    teamMembers[i],
+                    device != null ? device.getEUI() : violationResult.eui,
+                    alertSubject,
+                    message,
+                    createdAt
+                );
                 sendAlert(
-                        alertType,
-                        teamMembers[i],
-                        device != null ? device.getEUI() : violationResult.eui,
-                        alertSubject,
-                        message,
-                        createdAt);
+                    alertType,
+                    teamMembers[i],
+                    device != null ? device.getEUI() : violationResult.eui,
+                    alertSubject,
+                    message,
+                    createdAt
+                );
             }
         }
         if (config.administrators != null && !config.administrators.isEmpty()) {
@@ -793,33 +1033,48 @@ public abstract class EventLogic {
                     continue;
                 }
                 saveSignal(
-                        config.alertLevel,
-                        config.id,
-                        config.organizationId,
-                        admins[i],
-                        device != null ? device.getEUI() : violationResult.eui,
-                        alertSubject,
-                        message,
-                        createdAt);
+                    config.alertLevel,
+                    config.id,
+                    config.organizationId,
+                    admins[i],
+                    device != null ? device.getEUI() : violationResult.eui,
+                    alertSubject,
+                    message,
+                    createdAt
+                );
                 sendAlert(
-                        alertType,
-                        admins[i],
-                        device != null ? device.getEUI() : violationResult.eui,
-                        alertSubject,
-                        message,
-                        createdAt);
+                    alertType,
+                    admins[i],
+                    device != null ? device.getEUI() : violationResult.eui,
+                    alertSubject,
+                    message,
+                    createdAt
+                );
             }
         }
     }
 
-    abstract ConditionResult runPythonScript(SentinelConfig config, String[] messageArray, int deviceRuleStatus);
+    abstract ConditionResult runPythonScript(
+        SentinelConfig config,
+        String[] messageArray,
+        int deviceRuleStatus
+    );
 
-    abstract ConditionResult runPythonScript(SentinelConfig config, Device device, String jsonString);
+    abstract ConditionResult runPythonScript(
+        SentinelConfig config,
+        Device device,
+        String jsonString
+    );
 
     // abstract ConditionResult runPythonScript(SentinelConfig config, Device
     // device, Map deviceChannelMap,
     // List<List<LastDataPair>> values);
 
-    abstract void checkSentinelRelatedData(String messageId, SentinelConfig config, Map deviceChannelMap, String eui,
-            String[] messageArray);
+    abstract void checkSentinelRelatedData(
+        String messageId,
+        SentinelConfig config,
+        Map deviceChannelMap,
+        String eui,
+        String[] messageArray
+    );
 }

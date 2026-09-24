@@ -1,12 +1,13 @@
-<?xml version="1.0"?>
+<?xml version="1.0" ?>
 <project
-  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd"
-  xmlns="http://maven.apache.org/POM/4.0.0"
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd"
+    xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+>
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.signomix</groupId>
   <artifactId>signomix-sentinel</artifactId>
-  <version>1.0.0</version>
+  <version>1.13.0</version>
   <properties>
     <compiler-plugin.version>3.12.1</compiler-plugin.version>
     <maven.compiler.release>21</maven.compiler.release>
@@ -18,7 +19,7 @@
     <skipITs>true</skipITs>
     <surefire-plugin.version>3.2.3</surefire-plugin.version>
     <!-- Select the GraalVM version to use. -->
-    <graalvm.version></graalvm.version>
+    <graalvm.version>22.2.0</graalvm.version>
   </properties>
   <dependencyManagement>
     <dependencies>
@@ -73,26 +74,25 @@
     <dependency>
       <groupId>com.signomix</groupId>
       <artifactId>signomix-common</artifactId>
-      <version>1.43.13</version>
+      <version>1.47.1</version>
     </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-logging-gelf</artifactId>
     </dependency>
-    <!--     <dependency>
+    <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-opentelemetry</artifactId>
     </dependency>
     <dependency>
       <groupId>io.opentelemetry.instrumentation</groupId>
       <artifactId>opentelemetry-jdbc</artifactId>
-    </dependency> -->
-
-    <dependency>
-      <groupId>org.graalvm.sdk</groupId>
-      <artifactId>nativeimage</artifactId>
-      <version>${graalvm.version}</version>
     </dependency>
+    <dependency>
+          <groupId>org.graalvm.sdk</groupId>
+          <artifactId>graal-sdk</artifactId>
+          <version>${graalvm.version}</version>
+        </dependency>
     <dependency>
       <groupId>org.graalvm.js</groupId>
       <artifactId>js</artifactId>
@@ -104,11 +104,14 @@
       <artifactId>js-scriptengine</artifactId>
       <version>${graalvm.version}</version>
     </dependency>
-
     <dependency>
       <groupId>org.python</groupId>
       <artifactId>jython-standalone</artifactId>
       <version>2.7.2</version>
+    </dependency>
+    <dependency>
+        <groupId>io.smallrye.config</groupId>
+        <artifactId>smallrye-config-source-file-system</artifactId>
     </dependency>
   </dependencies>
   <build>
@@ -142,7 +145,8 @@
         <version>${surefire-plugin.version}</version>
         <configuration>
           <systemPropertyVariables>
-            <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
+            <java.util.logging.manager
+                        >org.jboss.logmanager.LogManager</java.util.logging.manager>
             <maven.home>${maven.home}</maven.home>
           </systemPropertyVariables>
           <argLine>@{argLine}</argLine>
@@ -165,7 +169,7 @@
           <includes>
             <include>target/classes/application.properties</include>
           </includes>
-          <excludes></excludes>
+          <excludes />
           <replacements>
             <replacement>
               <token>%release%</token>
@@ -185,8 +189,10 @@
             </goals>
             <configuration>
               <systemPropertyVariables>
-                <native.image.path>${project.build.directory}/${project.build.finalName}-runner</native.image.path>
-                <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
+                <native.image.path
+                                >${project.build.directory}/${project.build.finalName}-runner</native.image.path>
+                <java.util.logging.manager
+                                >org.jboss.logmanager.LogManager</java.util.logging.manager>
                 <maven.home>${maven.home}</maven.home>
               </systemPropertyVariables>
             </configuration>

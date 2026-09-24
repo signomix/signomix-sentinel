@@ -1,16 +1,13 @@
 package com.signomix.sentinel.domain.detectors;
 
-import java.util.HashMap;
-import java.util.List;
-
-import org.jboss.logging.Logger;
-
 import com.signomix.common.iot.sentinel.SentinelConfig;
 import com.signomix.sentinel.domain.ConditionResult;
 import com.signomix.sentinel.domain.Measurement;
 import com.signomix.sentinel.domain.SentinelCustomLogic;
-
 import io.agroal.api.AgroalDataSource;
+import java.util.HashMap;
+import java.util.List;
+import org.jboss.logging.Logger;
 
 public class TemperatureAnomalyDetector implements SentinelCustomLogic {
 
@@ -23,26 +20,35 @@ public class TemperatureAnomalyDetector implements SentinelCustomLogic {
 
     @Override
     public ConditionResult run(
-            SentinelConfig config,
-            String[] messageArray,
-            int deviceRuleStatus,
-            HashMap<String, String> scriptProperties,
-            AgroalDataSource olapDs,
-            List<Measurement> measurements) {
-
+        SentinelConfig config,
+        String[] messageArray,
+        int deviceRuleStatus,
+        HashMap<String, String> scriptProperties,
+        AgroalDataSource olapDs,
+        List<Measurement> measurements
+    ) {
         ConditionResult result = new ConditionResult();
         // Read parameters
-        String interal = scriptProperties.getOrDefault("interval", "1 minute");
-        String duration = scriptProperties.getOrDefault("duration", "15 minutes");
-        String statusTemeratures = scriptProperties.getOrDefault("statusTemperatures", "0:16,1:20,2:24,3:28");
-        List<StatusTemperature> statusTemperatureList = new java.util.ArrayList<>();
+        String interval = scriptProperties.getOrDefault("interval", "1 minute");
+        String duration = scriptProperties.getOrDefault(
+            "duration",
+            "15 minutes"
+        );
+        String statusTemperatures = scriptProperties.getOrDefault(
+            "statusTemperatures",
+            "0:16,1:20,2:24,3:28"
+        );
+        List<StatusTemperature> statusTemperatureList =
+            new java.util.ArrayList<>();
         try {
-            String[] pairs = statusTemeratures.split(",");
+            String[] pairs = statusTemperatures.split(",");
             for (String pair : pairs) {
                 String[] parts = pair.split(":");
                 int status = Integer.parseInt(parts[0]);
                 double temperature = Double.parseDouble(parts[1]);
-                statusTemperatureList.add(new StatusTemperature(status, temperature));
+                statusTemperatureList.add(
+                    new StatusTemperature(status, temperature)
+                );
             }
         } catch (Exception e) {
             logger.error("Error parsing statusTemperatures: " + e.getMessage());
@@ -51,25 +57,69 @@ public class TemperatureAnomalyDetector implements SentinelCustomLogic {
             return result;
         }
         if (measurements != null && measurements.size() > 0) {
-            // use provided measurements
-            result = detectAnomalies(recentReadings, deviceRuleStatus, statusTemperatureList, measurements);
+            // use provided measurements: convert to TemperatureReading list
+            List<TemperatureReading> recentReadings =
+                new java.util.ArrayList<>();
+            for (Measurement m : measurements) {
+                java.sql.Timestamp ts = m.timestamp;
+                double temperature = 0.0;
+                double tempTarget = 0.0; // desired/required temperature
+                double tempReq = 0.0; // requested temperature
+                int status = 0;
+                if (m.values != null) {
+                    Double v = m.values.get("temperature");
+                    if (v != null) temperature = v;
+                    v = m.values.get("temp_target");
+                    if (v != null) tempTarget = v;
+                    v = m.values.get("temp_req");
+                    if (v != null) tempReq = v;
+                    v = m.values.get("status");
+                    if (v != null) status = v.intValue();
+                }
+                // TemperatureReading(Timestamp timestamp, double currentTemperature, double requiredTemperature, int roomStatus, double requestedTemperature)
+                recentReadings.add(
+                    new TemperatureReading(
+                        ts,
+                        temperature,
+                        tempTarget,
+                        status,
+                        tempReq
+                    )
+                );
+            }
+            result = detectAnomalies(
+                recentReadings,
+                deviceRuleStatus,
+                statusTemperatureList
+            );
             return result;
         } else {
-            List<TemperatureReading> recentReadings = getReadingsLastNMinutes(messageArray[0], olapDs, interal,
-                    duration);
-            result = detectAnomalies(recentReadings, deviceRuleStatus, statusTemperatureList);
+            List<TemperatureReading> recentReadings = getReadingsLastNMinutes(
+                messageArray[0],
+                olapDs,
+                interval,
+                duration
+            );
+            result = detectAnomalies(
+                recentReadings,
+                deviceRuleStatus,
+                statusTemperatureList
+            );
         }
         return result;
     }
 
     /**
      * Główna metoda do uruchamiania wszystkich sprawdzeń.
-     * 
+     *
      * @param readings Lista odczytów z ostatniej doby, posortowana od najstarszego
      *                 do najnowszego.
      */
-    public ConditionResult detectAnomalies(List<TemperatureReading> readings, int durationMinutes,
-            List<StatusTemperature> statusTemperatures) {
+    public ConditionResult detectAnomalies(
+        List<TemperatureReading> readings,
+        int durationMinutes,
+        List<StatusTemperature> statusTemperatures
+    ) {
         ConditionResult result = new ConditionResult();
         if (readings == null || readings.size() < 2) {
             result.errorMessage = "Not enough data for analysis";
@@ -79,20 +129,23 @@ public class TemperatureAnomalyDetector implements SentinelCustomLogic {
         if (isOverheating(readings)) {
             result.violated = true;
             result.measurement = "temperature";
-            result.errorMessage = "Current temperature exceeds the desired temperature and is continuously rising.";
+            result.errorMessage =
+                "Current temperature exceeds the desired temperature and is continuously rising.";
             return result;
         }
 
         if (isRequiredTempIncorrect(readings, statusTemperatures)) {
             result.violated = true;
             result.measurement = "temperature_target";
-            result.errorMessage = "Desired temperature is inconsistent with room status.";
+            result.errorMessage =
+                "Desired temperature is inconsistent with room status.";
             return result;
         }
 
         if (isNotTrendingToDesired(readings)) {
             result.violated = true;
-            result.errorMessage = "Current temperature is not trending towards the desired temperature.";
+            result.errorMessage =
+                "Current temperature is not trending towards the desired temperature.";
             return result;
         }
         return result;
@@ -103,15 +156,23 @@ public class TemperatureAnomalyDetector implements SentinelCustomLogic {
      * 30 minut.
      */
     private boolean isOverheating(List<TemperatureReading> recentReadings) {
-        TemperatureReading latestReading = recentReadings.get(recentReadings.size() - 1);
+        TemperatureReading latestReading = recentReadings.get(
+            recentReadings.size() - 1
+        );
 
-        if (latestReading.getCurrentTemperature() <= latestReading.getRequiredTemperature()) {
+        if (
+            latestReading.getCurrentTemperature() <=
+            latestReading.getRequiredTemperature()
+        ) {
             return false;
         }
 
         // Sprawdzenie, czy temperatura rośnie monotonicznie
         for (int i = 1; i < recentReadings.size(); i++) {
-            if (recentReadings.get(i).getCurrentTemperature() < recentReadings.get(i - 1).getCurrentTemperature()) {
+            if (
+                recentReadings.get(i).getCurrentTemperature() <
+                recentReadings.get(i - 1).getCurrentTemperature()
+            ) {
                 return false; // Znaleziono spadek
             }
         }
@@ -122,8 +183,10 @@ public class TemperatureAnomalyDetector implements SentinelCustomLogic {
      * Sprawdza, czy temperatura żądana jest niezgodna ze statusem, a status jest
      * stabilny od 30 minut.
      */
-    private boolean isRequiredTempIncorrect(List<TemperatureReading> recentReadings,
-            List<StatusTemperature> statusTemperatures) {
+    private boolean isRequiredTempIncorrect(
+        List<TemperatureReading> recentReadings,
+        List<StatusTemperature> statusTemperatures
+    ) {
         int firstStatus = recentReadings.get(0).getRoomStatus();
         // Sprawdzenie, czy status był stały
         for (TemperatureReading reading : recentReadings) {
@@ -132,10 +195,15 @@ public class TemperatureAnomalyDetector implements SentinelCustomLogic {
             }
         }
 
-        TemperatureReading latestReading = recentReadings.get(recentReadings.size() - 1);
+        TemperatureReading latestReading = recentReadings.get(
+            recentReadings.size() - 1
+        );
         for (StatusTemperature st : statusTemperatures) {
             if (st.getStatus() == latestReading.getRoomStatus()) {
-                if (latestReading.getRequiredTemperature() != st.getTemperature()) {
+                if (
+                    latestReading.getRequiredTemperature() !=
+                    st.getTemperature()
+                ) {
                     return true; // Temperatura żądana jest zgodna ze statusem
                 }
             }
@@ -147,8 +215,12 @@ public class TemperatureAnomalyDetector implements SentinelCustomLogic {
      * Sprawdza, czy temperatura aktualna nie dąży do żądanej od co najmniej 30
      * minut.
      */
-    private boolean isNotTrendingToDesired(List<TemperatureReading> recentReadings) {
-        TemperatureReading latestReading = recentReadings.get(recentReadings.size() - 1);
+    private boolean isNotTrendingToDesired(
+        List<TemperatureReading> recentReadings
+    ) {
+        TemperatureReading latestReading = recentReadings.get(
+            recentReadings.size() - 1
+        );
         double currentTemp = latestReading.getCurrentTemperature();
         double desiredTemp = latestReading.getRequiredTemperature();
 
@@ -173,9 +245,14 @@ public class TemperatureAnomalyDetector implements SentinelCustomLogic {
      * liniowej.
      * Wartość dodatnia oznacza trend wzrostowy, ujemna - spadkowy.
      */
-    private double calculateTemperatureTrend(List<TemperatureReading> readings) {
+    private double calculateTemperatureTrend(
+        List<TemperatureReading> readings
+    ) {
         int n = readings.size();
-        double sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+        double sumX = 0,
+            sumY = 0,
+            sumXY = 0,
+            sumX2 = 0;
 
         for (int i = 0; i < n; i++) {
             // Używamy indeksu jako prostej osi X
@@ -195,27 +272,37 @@ public class TemperatureAnomalyDetector implements SentinelCustomLogic {
         return (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
     }
 
-    private List<TemperatureReading> getReadingsLastNMinutes(String eui, AgroalDataSource olapDs, String interval,
-            String duration) {
+    private List<TemperatureReading> getReadingsLastNMinutes(
+        String eui,
+        AgroalDataSource olapDs,
+        String interval,
+        String duration
+    ) {
         String query = """
-                SELECT
-                  time_bucket_gapfill(?, tstamp) as day,
-                  interpolate(avg(d1)) AS status,
-                  avg(d2) AS temperature,
-                  avg(d3) AS temp_target,
-                  avg(d6) AS temp_req
-                FROM
-                  analyticdata
-                WHERE eui=?
-                AND tstamp>now() - interval ?
-                AND tstamp<now()
-                GROUP BY day
-                ORDER BY day DESC;
-                                """;
+            SELECT
+              time_bucket_gapfill(?, tstamp) as day,
+              interpolate(avg(d1)) AS status,
+              avg(d2) AS temperature,
+              avg(d3) AS temp_target,
+              avg(d6) AS temp_req
+            FROM
+              analyticdata
+            WHERE eui=?
+            AND tstamp>now() - interval ?
+            AND tstamp<now()
+            GROUP BY day
+            ORDER BY day DESC;
+                            """;
         List<TemperatureReading> readings = new java.util.ArrayList<>();
-        try (java.sql.Connection conn = olapDs.getConnection();
-                java.sql.PreparedStatement ps = conn.prepareStatement(query)) {
-            ps.setString(1, eui);
+        try (
+            java.sql.Connection conn = olapDs.getConnection();
+            java.sql.PreparedStatement ps = conn.prepareStatement(query)
+        ) {
+            // Bind parameters in the same order as the placeholders in the query:
+            // 1 -> interval (time_bucket_gapfill), 2 -> eui (device id), 3 -> duration
+            ps.setString(1, interval);
+            ps.setString(2, eui);
+            ps.setString(3, duration);
             try (java.sql.ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     java.sql.Timestamp ts = rs.getTimestamp("day");
@@ -223,7 +310,15 @@ public class TemperatureAnomalyDetector implements SentinelCustomLogic {
                     double temperature = rs.getDouble("temperature");
                     double tempTarget = rs.getDouble("temp_target");
                     double tempReq = rs.getDouble("temp_req");
-                    readings.add(new TemperatureReading(ts, temperature, tempTarget, status, tempReq));
+                    readings.add(
+                        new TemperatureReading(
+                            ts,
+                            temperature,
+                            tempTarget,
+                            status,
+                            tempReq
+                        )
+                    );
                 }
             }
         } catch (java.sql.SQLException e) {
@@ -232,5 +327,4 @@ public class TemperatureAnomalyDetector implements SentinelCustomLogic {
         }
         return readings;
     }
-
 }
