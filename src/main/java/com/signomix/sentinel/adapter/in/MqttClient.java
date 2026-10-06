@@ -1,16 +1,13 @@
 package com.signomix.sentinel.adapter.in;
 
-import java.util.concurrent.ThreadLocalRandom;
-
-import org.eclipse.microprofile.reactive.messaging.Incoming;
-import org.jboss.logging.Logger;
-
 import com.signomix.sentinel.port.in.CommandEventReceivedPort;
 import com.signomix.sentinel.port.in.DataEventReceivedPort;
 import com.signomix.sentinel.port.in.DeviceEventPort;
-
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import java.util.concurrent.ThreadLocalRandom;
+import org.eclipse.microprofile.reactive.messaging.Incoming;
+import org.jboss.logging.Logger;
 
 @ApplicationScoped
 public class MqttClient {
@@ -30,20 +27,28 @@ public class MqttClient {
     @Incoming("command-created")
     public void receiveCommand(byte[] command) {
         try {
-            String messageId = System.currentTimeMillis() + "-" + ThreadLocalRandom.current().nextInt();
-            commandEventReceivedPort.receive(command,messageId);
+            String messageId =
+                System.currentTimeMillis() +
+                "-" +
+                ThreadLocalRandom.current().nextInt();
+            commandEventReceivedPort.receive(command, messageId);
         } catch (Exception e) {
-            logger.error("Error processing command: " + e.getMessage());
+            e.printStackTrace();
+            logger.error("Error processing command-created: " + e.getMessage());
         }
     }
 
     @Incoming("data-received")
     public void receive(byte[] eui) {
         try {
-            String messageId = System.currentTimeMillis() + "-" + ThreadLocalRandom.current().nextInt();
-            dataEventReceivedPort.receive(eui,messageId);
+            String messageId =
+                System.currentTimeMillis() +
+                "-" +
+                ThreadLocalRandom.current().nextInt();
+            dataEventReceivedPort.receive(eui, messageId);
         } catch (Exception e) {
-            logger.error("Error processing command: " + e.getMessage());
+            e.printStackTrace();
+            logger.error("Error processing data-received: " + e.getMessage());
         }
     }
 
@@ -53,9 +58,9 @@ public class MqttClient {
             logger.info("Device created: " + eui);
             deviceEventPort.deviceCreated(eui);
         } catch (Exception e) {
-            logger.error("Error processing command: " + e.getMessage());
+            e.printStackTrace();
+            logger.error("Error processing device-created: " + e.getMessage());
         }
-
     }
 
     @Incoming("device-removed")
@@ -64,7 +69,8 @@ public class MqttClient {
             logger.info("Device removed: " + eui);
             deviceEventPort.deviceRemoved(eui);
         } catch (Exception e) {
-            logger.error("Error processing command: " + e.getMessage());
+            e.printStackTrace();
+            logger.error("Error processing device-removed: " + e.getMessage());
         }
     }
 
@@ -74,7 +80,8 @@ public class MqttClient {
             logger.info("Device updated: " + eui);
             deviceEventPort.deviceUpdated(eui);
         } catch (Exception e) {
-            logger.error("Error processing command: " + e.getMessage());
+            e.printStackTrace();
+            logger.error("Error processing device-updated: " + e.getMessage());
         }
     }
 
@@ -85,5 +92,4 @@ public class MqttClient {
      * deviceEventPort.deviceControl(groupEui);
      * }
      */
-
 }
